@@ -20,7 +20,6 @@ pub trait Transport {
     /// Send one packet. Returns the number of bytes written.
     /// Unused by the Phase 0 pure receiver; needed for control replies and the
     /// bidirectional RFCOMM transport in later phases.
-    #[allow(dead_code)]
     fn send(&self, packet: &[u8]) -> io::Result<usize>;
 
     /// Block until one packet arrives, copying it into `buf`. Returns the number
@@ -46,7 +45,6 @@ impl UdpTransport {
 
     /// Fix the peer so [`Transport::send`] can be used without repeating the
     /// address. Optional for a pure receiver, but handy for control replies.
-    #[allow(dead_code)]
     pub fn connect(&self, peer: SocketAddr) -> io::Result<()> {
         self.socket.connect(peer)
     }

@@ -5,15 +5,12 @@
 //! jitter buffer, no driver yet — those are Phases 1 and 4. This binary exists
 //! purely to prove sound flows end to end.
 
-mod sink;
-mod transport;
-
 use std::net::SocketAddr;
 
 use phonemic_protocol::{decode, pcm16_sample_count, Codec, ProtocolError};
 
-use sink::AudioSink;
-use transport::{Transport, UdpTransport};
+use phonemic_core::sink::AudioSink;
+use phonemic_core::transport::{Transport, UdpTransport};
 
 /// Default port the phone streams to. Override with `PHONEMIC_PORT`.
 const DEFAULT_PORT: u16 = 4010;

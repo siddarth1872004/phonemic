@@ -8,6 +8,10 @@ authors.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "phonemic_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "phonemic-receiver"
 path = "src/main.rs"
