@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PhoneMic</string>
+    <string name="hint_pc_ip">PC IP address</string>
+    <string name="start">Start mic</string>
+    <string name="stop">Stop mic</string>
+    <string name="notif_channel">PhoneMic streaming</string>
+    <string name="notif_text">Streaming microphone to PC</string>
+</resources>

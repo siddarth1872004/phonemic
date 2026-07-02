@@ -1,0 +1,29 @@
+[package]
+name = "phonemic-core"
+description = "PhoneMic PC-side core: transports, jitter buffer, decode, and (dev-mode) audio playback."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "phonemic-receiver"
+path = "src/main.rs"
+
+[dependencies]
+# Single source of truth for the wire format, shared with the phone.
+phonemic-protocol = { path = "../../protocol" }
+
+# Cross-platform audio I/O. Used ONLY in the dev/testing phase to play received
+# audio out the default output device; Phase 4 replaces this sink with the
+# virtual-driver IPC. This is the one intentionally-heavy dependency and it is
+# explicitly called for in the project brief.
+cpal = "0.15"
+
+# Lock-free SPSC ring buffer. Justified by principle #2 (low latency): the cpal
+# audio callback runs on a realtime thread and must never block on a mutex held
+# by the network thread. `ringbuf` is tiny, dependency-free, and purpose-built
+# for exactly this producer(net)/consumer(audio) handoff.
+ringbuf = "0.4"

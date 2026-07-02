@@ -1,0 +1,19 @@
+[package]
+name = "phonemic-protocol"
+description = "Wire protocol (packet framing, encode/decode, version negotiation) shared by the PhoneMic PC app and phone native layer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+# no_std by default (see #![no_std] in lib.rs) so this crate can be compiled
+# for the Android native layer via cbindgen/JNI as well as the PC side.
+name = "phonemic_protocol"
+
+[dependencies]
+
+[features]
+default = []

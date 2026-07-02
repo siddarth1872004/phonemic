@@ -1,0 +1,30 @@
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# Android
+phone-app/.gradle/
+phone-app/build/
+phone-app/app/build/
+phone-app/local.properties
+phone-app/.cxx/
+*.apk
+*.aab
+*.keystore
+
+# WDK / driver build
+pc-app/driver/**/x64/
+pc-app/driver/**/Debug/
+pc-app/driver/**/Release/
+*.obj
+*.pdb
+*.sys
+*.cat
+
+# IDE / OS
+.idea/
+.vs/
+*.user
+.DS_Store
+Thumbs.db
