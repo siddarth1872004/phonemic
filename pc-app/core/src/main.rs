@@ -6,6 +6,7 @@
 //! purely to prove sound flows end to end.
 
 use std::net::SocketAddr;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use phonemic_protocol::{decode, pcm16_sample_count, Codec, ProtocolError};
 
@@ -20,6 +21,7 @@ const DEFAULT_PORT: u16 = 4010;
 const RECV_BUF_LEN: usize = 2048;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let measure = std::env::args().any(|a| a == "--measure");
     let port = std::env::var("PHONEMIC_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -27,6 +29,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bind_addr: SocketAddr = ([0, 0, 0, 0], port).into();
     let transport = UdpTransport::bind(bind_addr)?;
+
+    if measure {
+        // Latency harness: no audio device needed, collect a sample and report.
+        return run_measure(&transport, port);
+    }
 
     let mut sink = AudioSink::new()?;
 
@@ -133,4 +140,79 @@ fn log_decode_error(err: &ProtocolError, malformed: &mut u64) {
     if *malformed <= 5 || *malformed % 1000 == 0 {
         eprintln!("dropped malformed packet ({malformed}): {err:?}");
     }
+}
+
+/// Wall-clock microseconds since the Unix epoch (see `softphone` for the pair).
+fn now_micros() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_micros() as u64
+}
+
+/// `--measure` mode: collect a fixed number of packets and report one-way
+/// latency (send-stamp → receive) statistics, then exit.
+///
+/// This measures the transport + decode + scheduling latency between the sender
+/// and this process. Run against `phonemic-softphone` on loopback it isolates
+/// the software/OS overhead (real Wi-Fi and the phone's capture latency are
+/// additional, and the configured jitter-buffer depth adds `target_depth ×
+/// frame_ms` on top). Sender and receiver compare the same OS wall clock, so on
+/// one machine the numbers are directly comparable.
+fn run_measure(
+    transport: &UdpTransport,
+    port: u16,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const TARGET: usize = 300; // ~3 s of 10 ms frames
+
+    println!("PhoneMic receiver (measure mode)");
+    println!("  listening on udp {}", transport.local_addr()?);
+    println!("  collecting {TARGET} packets on port {port}...\n");
+
+    let mut buf = [0u8; RECV_BUF_LEN];
+    let mut latencies_ms: Vec<f64> = Vec::with_capacity(TARGET);
+    let mut expected_seq: Option<u32> = None;
+    let mut lost: u64 = 0;
+    let mut skipped_clock = 0u64;
+
+    while latencies_ms.len() < TARGET {
+        let (n, _) = transport.recv(&mut buf)?;
+        let now = now_micros();
+        let (header, _payload) = match decode(&buf[..n]) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        account_for_loss(header.seq, &mut expected_seq, &mut lost);
+        // Guard against a stamp in the future (clock skew / different machine).
+        if now >= header.timestamp_us {
+            latencies_ms.push((now - header.timestamp_us) as f64 / 1000.0);
+        } else {
+            skipped_clock += 1;
+        }
+    }
+
+    latencies_ms.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let count = latencies_ms.len();
+    let pct = |p: f64| latencies_ms[((count - 1) as f64 * p) as usize];
+    let mean = latencies_ms.iter().sum::<f64>() / count as f64;
+    let jitter = {
+        let var = latencies_ms.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / count as f64;
+        var.sqrt()
+    };
+
+    println!("measured {count} packets ({lost} lost, {skipped_clock} skipped for clock skew)");
+    println!(
+        "one-way latency (ms):  min {:.3}   median {:.3}   p95 {:.3}   max {:.3}",
+        latencies_ms[0],
+        pct(0.50),
+        pct(0.95),
+        latencies_ms[count - 1]
+    );
+    println!("  mean {mean:.3} ms   jitter (stddev) {jitter:.3} ms");
+    println!(
+        "\nnote: this is software/transport latency only. Add the jitter-buffer\n\
+         depth and, with a real phone, Oboe capture + Wi-Fi one-way time. Use the\n\
+         acoustic clap test (docs/PHASE0-BRINGUP.md) for a true glass-to-glass number."
+    );
+    Ok(())
 }

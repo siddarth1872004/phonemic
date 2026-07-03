@@ -17,6 +17,26 @@ cargo run -p phonemic-core
 target/release/phonemic-receiver.exe
 ```
 
+### Testing the PC pipeline without a phone
+
+`softphone` emulates the Android sender on the PC using the real wire protocol,
+so the whole receive path can be exercised and latency-measured with no device:
+
+```sh
+cargo build -p phonemic-core --bins --release
+
+# terminal A: receiver in latency-measurement mode
+PHONEMIC_PORT=4067 target/release/phonemic-receiver.exe --measure
+
+# terminal B: stream synthetic audio at it
+target/release/softphone.exe 127.0.0.1 4067
+```
+
+The receiver collects 300 packets and prints one-way latency (min/median/p95/max
++ jitter). On loopback this isolates software/OS overhead (sub-millisecond); a
+real phone adds Oboe capture + Wi-Fi, measured with the clap test in
+[PHASE0-BRINGUP.md](PHASE0-BRINGUP.md).
+
 The receiver prints the address it's listening on. Point the phone app at this
 PC's LAN IP and port 4010.
 
