@@ -20,6 +20,10 @@ target/release/phonemic-receiver.exe
 The receiver prints the address it's listening on. Point the phone app at this
 PC's LAN IP and port 4010.
 
+> For the full step-by-step to finish Phase 0 (install → build → run → measure
+> latency), see **[PHASE0-BRINGUP.md](PHASE0-BRINGUP.md)**. The summary below is
+> just the prerequisite list.
+
 ## Phone side (Android) — prerequisites not yet installed on this machine
 
 The native hot path (Oboe + libopus + JNI) and the Kotlin shell need:
