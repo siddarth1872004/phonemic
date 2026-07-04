@@ -3,6 +3,16 @@ resolver = "2"
 members = [
     "protocol",
     "pc-app/core",
+    "pc-app/web-gateway",
+]
+# web-gateway needs TLS (getUserMedia requires a secure context), which pulls
+# raw-dylib crates that the incomplete windows-gnu toolchain on some dev boxes
+# can't build (missing `as`). Keep it out of the default build so protocol +
+# core stay green; build it explicitly with `-p phonemic-web-gateway` on a
+# complete toolchain. See docs/WEB-CLIENT.md.
+default-members = [
+    "protocol",
+    "pc-app/core",
 ]
 
 [workspace.package]

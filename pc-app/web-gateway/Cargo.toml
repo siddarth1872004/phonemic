@@ -1,0 +1,31 @@
+[package]
+name = "phonemic-web-gateway"
+description = "Serves the PhoneMic web client over HTTPS and bridges browser WebSocket PCM into the PC audio pipeline."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "phonemic-web-gateway"
+path = "src/main.rs"
+
+[dependencies]
+# Shared wire format — same packets the native path and softphone use.
+phonemic-protocol = { path = "../../protocol" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+axum = { version = "0.7", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tower-http = { version = "0.6", features = ["fs"] }
+
+# Self-signed TLS so getUserMedia's secure-context requirement is satisfied on
+# the LAN. Pure Rust, no CMake (unlike an OpenSSL path) — important on this box.
+rcgen = "0.13"
+
+# Same lock-free ring + audio output as the native sink, kept local so the cpal
+# Stream (which is !Send on Windows) stays on its own thread.
+cpal = "0.15"
+ringbuf = "0.4"

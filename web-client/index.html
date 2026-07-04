@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>PhoneMic</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1.25rem; padding: 2rem; box-sizing: border-box;
+    background: #0f1115; color: #e8eaed;
+  }
+  h1 { font-size: 1.4rem; margin: 0; letter-spacing: .02em; }
+  .sub { opacity: .6; font-size: .85rem; margin-top: -.6rem; text-align: center; }
+  button {
+    font-size: 1.15rem; font-weight: 600; padding: .9rem 2.4rem; border: 0;
+    border-radius: 999px; cursor: pointer; color: #fff;
+    background: #2f6bff; transition: background .15s, transform .05s;
+  }
+  button:active { transform: scale(.97); }
+  button.on { background: #d33; }
+  button:disabled { background: #444; cursor: default; }
+  #status { font-size: .95rem; min-height: 1.2em; opacity: .85; text-align: center; }
+  .meter { width: min(80vw, 320px); height: 10px; border-radius: 6px; background: #23262e; overflow: hidden; }
+  .meter > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#2f6bff,#38d39f); transition: width .06s linear; }
+  .stat { font-variant-numeric: tabular-nums; opacity: .6; font-size: .8rem; }
+</style>
+</head>
+<body>
+  <h1>🎙️ PhoneMic</h1>
+  <div class="sub">stream this phone's mic to your PC</div>
+  <button id="toggle">Start mic</button>
+  <div class="meter"><i id="level"></i></div>
+  <div id="status">idle</div>
+  <div class="stat" id="stat"></div>
+
+<script>
+const PROTO = {
+  MAGIC: 0x4D50, VERSION: 1, CODEC_PCM16: 0,
+  HEADER_LEN: 18, SAMPLE_RATE: 48000, FRAME_SAMPLES: 480, // 10 ms @ 48 kHz
+};
+
+const els = {
+  toggle: document.getElementById('toggle'),
+  status: document.getElementById('status'),
+  level:  document.getElementById('level'),
+  stat:   document.getElementById('stat'),
+};
+
+let ctx, ws, node, stream, seq = 0, sent = 0, running = false;
+
+function setStatus(t) { els.status.textContent = t; }
+
+async function start() {
+  running = true;
+  els.toggle.textContent = 'Stop mic';
+  els.toggle.classList.add('on');
+  seq = 0; sent = 0;
+
+  // The page is served by the gateway over HTTPS, so same-origin wss reuses the
+  // cert the browser already accepted for this page.
+  const wsUrl = `wss://${location.host}/ws`;
+  setStatus('connecting to ' + wsUrl + ' …');
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = async () => {
+    setStatus('mic → PC (streaming)');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+    } catch (e) { fail('mic permission denied: ' + e.message); return; }
+
+    // Force 48 kHz so the PC receives what it expects (no resampling).
+    ctx = new AudioContext({ sampleRate: PROTO.SAMPLE_RATE });
+    if (ctx.sampleRate !== PROTO.SAMPLE_RATE) {
+      setStatus('warning: browser gave ' + ctx.sampleRate + ' Hz, expected 48000 (pitch may shift)');
+    }
+    await ctx.audioWorklet.addModule('pcm-worklet.js');
+    const src = ctx.createMediaStreamSource(stream);
+    node = new AudioWorkletNode(ctx, 'pcm-worklet', { numberOfInputs: 1, numberOfOutputs: 0 });
+    node.port.onmessage = (ev) => onFrame(ev.data); // {pcm: Int16Array, peak: number}
+    src.connect(node);
+  };
+
+  ws.onerror = () => fail('connection error — is the gateway running? cert accepted?');
+  ws.onclose = () => { if (running) fail('connection closed'); };
+}
+
+function onFrame(msg) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  // Build one protocol packet: 18-byte header + PCM16 payload.
+  const payloadBytes = msg.pcm.length * 2;
+  const buf = new ArrayBuffer(PROTO.HEADER_LEN + payloadBytes);
+  const dv = new DataView(buf);
+  dv.setUint16(0, PROTO.MAGIC, true);
+  dv.setUint8(2, PROTO.VERSION);
+  dv.setUint8(3, PROTO.CODEC_PCM16);
+  dv.setUint32(4, seq >>> 0, true);
+  dv.setBigUint64(8, BigInt(Date.now()) * 1000n, true); // wall-clock µs, for latency measurement
+  dv.setUint16(16, payloadBytes, true);
+  new Int16Array(buf, PROTO.HEADER_LEN, msg.pcm.length).set(msg.pcm); // LE on all browsers
+
+  ws.send(buf);
+  seq = (seq + 1) >>> 0;
+  sent++;
+
+  els.level.style.width = Math.min(100, msg.peak * 140) + '%';
+  if ((sent & 15) === 0) els.stat.textContent = sent + ' frames sent';
+}
+
+function stop() {
+  running = false;
+  els.toggle.textContent = 'Start mic';
+  els.toggle.classList.remove('on');
+  els.level.style.width = '0%';
+  if (node) { node.disconnect(); node = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (ctx) { ctx.close(); ctx = null; }
+  if (ws && ws.readyState <= 1) ws.close();
+  ws = null;
+  setStatus('stopped');
+}
+
+function fail(msg) { setStatus('⚠ ' + msg); stop(); }
+
+els.toggle.onclick = () => (running ? stop() : start());
+</script>
+</body>
+</html>
