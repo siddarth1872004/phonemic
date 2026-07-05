@@ -58,7 +58,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:hint="e.g. 192.168.29.26">
+                    android:hint="IP shown in the PC app">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/ipInput"

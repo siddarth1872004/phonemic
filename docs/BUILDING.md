@@ -44,7 +44,7 @@ windows-gnu toolchain can't build (missing `as`). On this machine, put the
 already-installed **w64devkit** on `PATH` first:
 
 ```sh
-export PATH="/c/Users/Siddarth/w64devkit/bin:$PATH"   # provides as + dlltool
+export PATH="$HOME/w64devkit/bin:$PATH"   # provides as + dlltool
 cargo run -p phonemic-web-gateway                      # https://<pc-ip>:8443
 ```
 

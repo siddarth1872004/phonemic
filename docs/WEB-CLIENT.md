@@ -74,7 +74,7 @@ fails with `dlltool ... CreateProcess`. Two fixes:
 `raw-dylib`), which is why they remain the workspace's `default-members`.
 
 On this dev machine the gateway builds by putting the already-installed
-**w64devkit** (`C:\Users\Siddarth\w64devkit\bin`, which has `as` + `dlltool`) on
+**w64devkit** (its `bin` folder, which has `as` + `dlltool`) on
 `PATH` before `cargo build -p phonemic-web-gateway`. It has been built and
 verified end-to-end there (served the page over HTTPS and streamed 200 PCM16
 frames — including reordered and dropped frames — through the jitter buffer).

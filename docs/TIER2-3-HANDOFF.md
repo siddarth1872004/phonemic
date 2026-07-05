@@ -19,7 +19,7 @@ The Gradle wrapper is now committed, so the project is turnkey.
 ```sh
 cd phone-app
 # create local.properties pointing at your SDK:
-#   sdk.dir=C\:\\Users\\Siddarth\\AppData\\Local\\Android\\Sdk
+#   sdk.dir=C\:\\Users\\<you>\\AppData\\Local\\Android\\Sdk
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```

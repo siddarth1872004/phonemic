@@ -23,7 +23,7 @@ version = "0.0.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["The PhoneMic Authors"]
-repository = "https://github.com/phonemic/phonemic"
+repository = "https://github.com/siddarth1872004/phonemic"
 rust-version = "1.80"
 
 # Thin, fast, small release profile for the audio hot path.

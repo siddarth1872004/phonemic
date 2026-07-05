@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 if not exist "target\release\PhoneMic.exe" (
     echo First run: building PhoneMic ^(one time, ~4 min^)...
-    set "PATH=C:\Users\Siddarth\w64devkit\bin;%PATH%"
+    if exist "%USERPROFILE%\w64devkit\bin" set "PATH=%USERPROFILE%\w64devkit\bin;%PATH%"
     cargo build --release -p phonemic-gui
     if errorlevel 1 goto builderror
 )
