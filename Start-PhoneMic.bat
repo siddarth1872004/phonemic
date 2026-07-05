@@ -1,15 +1,15 @@
 @echo off
-rem ===== PhoneMic — double-click to run =====
+rem ===== PhoneMic — double-click to run the windowed app =====
 cd /d "%~dp0"
 
-if not exist "target\release\phonemic-receiver.exe" (
-    echo First run: building PhoneMic ^(one time, ~1 min^)...
-    cargo build --release -p phonemic-core
+if not exist "target\release\PhoneMic.exe" (
+    echo First run: building PhoneMic ^(one time, ~4 min^)...
+    set "PATH=C:\Users\Siddarth\w64devkit\bin;%PATH%"
+    cargo build --release -p phonemic-gui
     if errorlevel 1 goto builderror
 )
 
-target\release\phonemic-receiver.exe
-pause
+start "" "target\release\PhoneMic.exe"
 goto :eof
 
 :builderror
