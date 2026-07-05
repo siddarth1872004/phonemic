@@ -11,6 +11,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
@@ -26,15 +27,21 @@ use cpal::{FromSample, SizedSample};
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
+use phonemic_core::jitter_buffer::{JitterBuffer, Pop};
 use phonemic_protocol::{decode, pcm16_sample_count, Codec};
 
 const SAMPLE_RATE: u32 = 48_000;
+const FRAME_SAMPLES: usize = 480; // 10 ms @ 48 kHz
+/// Jitter-buffer sizing: hold ~30 ms (3 frames) to absorb network jitter,
+/// with room to reorder up to ~320 ms of packets.
+const JB_CAPACITY: u32 = 32;
+const JB_TARGET_DEPTH: u32 = 3;
 
 #[derive(Clone)]
 struct AppState {
-    /// Producer half of the ring feeding the audio output thread. A single
-    /// browser connection at a time is expected; the Mutex serialises pushes.
-    audio: Arc<Mutex<HeapProd<i16>>>,
+    /// Reorder + loss-concealment buffer that the WS handler fills by sequence
+    /// number and the playout timer drains. Shared; one browser at a time.
+    jitter: Arc<Mutex<JitterBuffer>>,
 }
 
 #[tokio::main]
@@ -50,9 +57,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Audio output on its own thread (cpal Stream is !Send on Windows).
     let producer = spawn_audio_output()?;
-    let state = AppState {
-        audio: Arc::new(Mutex::new(producer)),
-    };
+
+    // Playout pipeline: the WS handler inserts packets into the jitter buffer by
+    // sequence number; this timer drains one frame every 10 ms, concealing gaps
+    // with silence, and feeds the audio ring. This is where reorder tolerance
+    // and loss concealment actually happen.
+    let jitter = Arc::new(Mutex::new(JitterBuffer::new(JB_CAPACITY, JB_TARGET_DEPTH)));
+    spawn_playout(jitter.clone(), producer);
+    let state = AppState { jitter };
 
     // Self-signed cert covering localhost plus whatever host the user browses.
     let san = vec!["localhost".to_string(), host.clone()];
@@ -84,12 +96,11 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-/// One browser connection: receive framed PCM16 packets and enqueue samples.
+/// One browser connection: receive framed PCM16 packets and hand them to the
+/// jitter buffer by sequence number. Playout/concealment happens in the timer.
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     println!("browser connected");
     let mut received: u64 = 0;
-    let mut expected_seq: Option<u32> = None;
-    let mut lost: u64 = 0;
 
     while let Some(Ok(msg)) = socket.recv().await {
         let Message::Binary(buf) = msg else { continue };
@@ -98,30 +109,48 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
             Err(_) => continue, // malformed frame; drop it (loss tolerance)
         };
 
-        if let Some(exp) = expected_seq {
-            if header.seq > exp {
-                lost += (header.seq - exp) as u64;
-            }
-        }
-        expected_seq = Some(header.seq.wrapping_add(1));
-
-        if header.codec == Codec::Pcm16 {
-            if let Some(count) = pcm16_sample_count(payload) {
-                let mut samples = Vec::with_capacity(count);
-                for pair in payload.chunks_exact(2) {
-                    samples.push(i16::from_le_bytes([pair[0], pair[1]]));
-                }
-                let mut prod = state.audio.lock().await;
-                prod.push_slice(&samples);
-            }
-        }
-
-        received += 1;
-        if received % 500 == 0 {
-            println!("frames: {received} ok, {lost} lost");
+        // Only PCM16 with a whole number of samples is playable today.
+        if header.codec == Codec::Pcm16 && pcm16_sample_count(payload).is_some() {
+            state
+                .jitter
+                .lock()
+                .await
+                .insert(header.seq, payload.to_vec());
+            received += 1;
         }
     }
     println!("browser disconnected ({received} frames)");
+}
+
+/// Drain the jitter buffer at the frame cadence and feed the audio ring.
+fn spawn_playout(jitter: Arc<Mutex<JitterBuffer>>, producer: HeapProd<i16>) {
+    tokio::spawn(async move {
+        let mut producer = producer;
+        let silence = [0i16; FRAME_SAMPLES];
+        let mut tick = tokio::time::interval(Duration::from_millis(10));
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            let popped = { jitter.lock().await.pop() };
+            match popped {
+                Pop::Frame(bytes) => {
+                    // bytes are little-endian PCM16; convert and enqueue.
+                    let mut samples = Vec::with_capacity(bytes.len() / 2);
+                    for pair in bytes.chunks_exact(2) {
+                        samples.push(i16::from_le_bytes([pair[0], pair[1]]));
+                    }
+                    producer.push_slice(&samples);
+                }
+                // Lost packet → emit a frame of silence so the timeline holds.
+                // (Opus PLC replaces this once Opus decoding lands.)
+                Pop::Conceal => {
+                    producer.push_slice(&silence);
+                }
+                // Still priming or underrun → device plays its own silence.
+                Pop::Empty => {}
+            }
+        }
+    });
 }
 
 // --- Audio output ------------------------------------------------------------

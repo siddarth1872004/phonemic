@@ -970,6 +970,7 @@ dependencies = [
  "axum",
  "axum-server",
  "cpal",
+ "phonemic-core",
  "phonemic-protocol",
  "rcgen",
  "ringbuf",

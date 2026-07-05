@@ -15,8 +15,10 @@ path = "src/main.rs"
 [dependencies]
 # Shared wire format — same packets the native path and softphone use.
 phonemic-protocol = { path = "../../protocol" }
+# Shared jitter buffer (reorder + loss concealment), unit-tested in core.
+phonemic-core = { path = "../core" }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 axum = { version = "0.7", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower-http = { version = "0.6", features = ["fs"] }
