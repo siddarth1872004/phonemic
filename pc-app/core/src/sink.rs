@@ -34,16 +34,49 @@ pub struct AudioSink {
     pub sample_rate: u32,
     /// Output device channel count (mono input is duplicated across these).
     pub channels: u16,
+    /// Name of the output device we ended up on (for a friendly banner).
+    pub device_name: String,
+    /// True if we routed into a virtual cable (VB-CABLE) rather than speakers.
+    pub is_virtual_cable: bool,
 }
 
 impl AudioSink {
-    /// Open the default output device and start playing whatever gets pushed.
-    pub fn new() -> Result<Self, Box<dyn Error>> {
+    /// Open an output device and start playing whatever gets pushed.
+    ///
+    /// If `prefer` is set, pick the first output device whose name contains that
+    /// substring (case-insensitive) — used to auto-route into "CABLE Input"
+    /// (VB-CABLE) so the phone shows up as a real microphone. Falls back to the
+    /// default output device (speakers) when no match is found.
+    pub fn new(prefer: Option<&str>) -> Result<Self, Box<dyn Error>> {
         let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or("no default output device found")?;
 
+        let mut matched = false;
+        let device = match prefer {
+            Some(sub) => {
+                let want = sub.to_lowercase();
+                let found = host.output_devices().ok().and_then(|mut devs| {
+                    devs.find(|d| {
+                        d.name()
+                            .map(|n| n.to_lowercase().contains(&want))
+                            .unwrap_or(false)
+                    })
+                });
+                match found {
+                    Some(d) => {
+                        matched = true;
+                        d
+                    }
+                    None => host
+                        .default_output_device()
+                        .ok_or("no output device found")?,
+                }
+            }
+            None => host
+                .default_output_device()
+                .ok_or("no output device found")?,
+        };
+
+        let device_name = device.name().unwrap_or_else(|_| "unknown".to_string());
         let default_cfg = device.default_output_config()?;
         let sample_format = default_cfg.sample_format();
         let channels = default_cfg.channels();
@@ -72,6 +105,8 @@ impl AudioSink {
             _stream: stream,
             sample_rate: SAMPLE_RATE,
             channels,
+            device_name,
+            is_virtual_cable: matched,
         })
     }
 

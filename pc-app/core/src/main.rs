@@ -35,16 +35,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return run_measure(&transport, port);
     }
 
-    let mut sink = AudioSink::new()?;
+    // Prefer VB-CABLE ("CABLE Input") so the phone becomes a real microphone
+    // other apps can select; fall back to speakers if it isn't installed.
+    let mut sink = AudioSink::new(Some("cable"))?;
+    let lan_ip = local_ip().unwrap_or_else(|| "<your PC's IP>".to_string());
 
-    println!("PhoneMic receiver (Phase 0)");
-    println!("  listening on   udp {}", transport.local_addr()?);
-    println!(
-        "  playing out    default output @ {} Hz, {} ch",
-        sink.sample_rate, sink.channels
-    );
-    println!("  point the phone app at this PC's LAN IP, port {port}");
-    println!("  Ctrl-C to stop.\n");
+    println!("========================================================");
+    println!("  PhoneMic  —  ready");
+    println!("========================================================");
+    println!();
+    println!("  1) On your phone, in the PhoneMic app, enter:");
+    println!("         IP:   {lan_ip}");
+    println!("         port: {port}");
+    println!("     then tap Start.");
+    println!();
+    if sink.is_virtual_cable {
+        println!("  2) In Discord/Zoom/etc, pick this microphone:");
+        println!("         \"CABLE Output (VB-Audio Virtual Cable)\"");
+        println!("     (audio is routing into: {})", sink.device_name);
+    } else {
+        println!("  2) Heads up: VB-CABLE isn't installed, so right now the");
+        println!("     phone audio just plays out your speakers:");
+        println!("         {}", sink.device_name);
+        println!("     To use it as a real mic, install VB-CABLE (free) and");
+        println!("     restart this app — see START-HERE.md.");
+    }
+    println!();
+    println!("  Leave this window open while you're using it. Ctrl-C to stop.");
+    println!("--------------------------------------------------------\n");
 
     let mut buf = [0u8; RECV_BUF_LEN];
 
@@ -139,6 +157,18 @@ fn account_for_loss(seq: u32, expected: &mut Option<u32>, lost: &mut u64) {
 fn log_decode_error(err: &ProtocolError, malformed: &mut u64) {
     if *malformed <= 5 || *malformed % 1000 == 0 {
         eprintln!("dropped malformed packet ({malformed}): {err:?}");
+    }
+}
+
+/// Best-effort primary LAN IPv4 of this machine, with no dependencies: open a
+/// UDP socket "toward" a public address (no packets are actually sent) and read
+/// back which local interface the OS would route through.
+fn local_ip() -> Option<String> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("8.8.8.8:80").ok()?;
+    match sock.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(v4) if !v4.is_loopback() => Some(v4.to_string()),
+        _ => None,
     }
 }
 
