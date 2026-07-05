@@ -170,11 +170,21 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Keep this app open while you're on a call."
+            android:text="Streaming keeps running in the background — you can lock the screen."
             android:textColor="@color/muted"
             android:textSize="12sp"
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="16dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PhoneMic v0.2.0"
+            android:textColor="@color/muted"
+            android:textSize="11sp"
+            android:alpha="0.6"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp" />
 
     </LinearLayout>
 </ScrollView>

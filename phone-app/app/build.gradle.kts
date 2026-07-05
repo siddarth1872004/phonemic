@@ -11,8 +11,8 @@ android {
         applicationId = "com.phonemic"
         minSdk = 29          // Android 10: reliable low-latency AAudio via Oboe
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.2.0"
 
         // Only ship 64-bit ABIs; drop this list to add 32-bit if ever needed.
         ndk {

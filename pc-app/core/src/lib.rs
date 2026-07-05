@@ -11,3 +11,4 @@ pub mod denoise;
 pub mod jitter_buffer;
 pub mod sink;
 pub mod transport;
+pub mod voice_fx;

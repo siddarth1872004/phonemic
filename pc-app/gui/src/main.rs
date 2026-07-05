@@ -17,6 +17,7 @@ use eframe::egui;
 use phonemic_core::denoise::Denoiser;
 use phonemic_core::sink::AudioSink;
 use phonemic_core::transport::{Transport, UdpTransport};
+use phonemic_core::voice_fx::{Effect, VoiceFx};
 use phonemic_protocol::{decode, Codec};
 
 const PORT: u16 = 4010;
@@ -29,6 +30,8 @@ struct Shared {
     last_packet_ms: AtomicU64,
     is_cable: AtomicBool,
     noise_suppression: AtomicBool, // UI toggle → receiver thread
+    effect: AtomicU32,             // voice-changer preset (voice_fx::Effect as u8)
+    monitor: AtomicBool,           // "test sound": play through PC speakers
     dropped_encrypted: AtomicU64,  // encrypted packets we couldn't decrypt
     datagrams: AtomicU64,          // every UDP datagram, before any parsing
     last_datagram_ms: AtomicU64,   // when the last datagram (any) arrived
@@ -93,6 +96,7 @@ fn spawn_receiver(shared: Arc<Shared>) {
 
         let mut denoiser = Denoiser::new();
         let mut denoised: Vec<i16> = Vec::with_capacity(1024);
+        let mut fx = VoiceFx::new();
         let mut buf = [0u8; 2048];
         // Cache the derived key so we only recompute it when the PIN changes.
         let mut cur_pin = String::new();
@@ -152,12 +156,22 @@ fn spawn_receiver(shared: Arc<Shared>) {
                 samples.push(s);
             }
 
-            if shared.noise_suppression.load(Ordering::Relaxed) {
+            // Optional cleanup, then the voice-changer effect.
+            let final_buf: &mut Vec<i16> = if shared.noise_suppression.load(Ordering::Relaxed) {
                 denoised.clear();
                 denoiser.process(&samples, &mut denoised);
-                sink.push(&denoised);
+                &mut denoised
             } else {
-                sink.push(&samples);
+                &mut samples
+            };
+            fx.set_effect(Effect::from_u8(shared.effect.load(Ordering::Relaxed) as u8));
+            fx.process(final_buf);
+
+            // Route audio: always feed the virtual cable (that's the mic path);
+            // on speakers, only play when "Test sound" is on — otherwise the
+            // user hears themselves with no way to stop it.
+            if sink.is_virtual_cable || shared.monitor.load(Ordering::Relaxed) {
+                sink.push(final_buf);
             }
 
             shared.set_peak(peak as f32 / 32768.0);
@@ -345,6 +359,25 @@ impl eframe::App for App {
                             ui.label(egui::RichText::new("Isolate your voice — removes fans, hiss, keyboard, room noise").size(12.0).color(MUTED));
                         });
                     });
+
+                    ui.add_space(10.0);
+                    ui.label(egui::RichText::new("VOICE CHANGER").size(11.0).color(MUTED).strong());
+                    ui.add_space(6.0);
+                    let current = self.shared.effect.load(Ordering::Relaxed) as u8;
+                    ui.horizontal_wrapped(|ui| {
+                        for (id, label) in [(0u8, "Normal"), (1, "Deep"), (2, "Chipmunk"), (3, "Robot")] {
+                            let selected = current == id;
+                            let btn = egui::Button::new(
+                                egui::RichText::new(label)
+                                    .color(if selected { egui::Color32::WHITE } else { TEXT }),
+                            )
+                            .fill(if selected { ACCENT } else { egui::Color32::from_rgb(0x2A, 0x2E, 0x38) })
+                            .rounding(999.0);
+                            if ui.add(btn).clicked() {
+                                self.shared.effect.store(id as u32, Ordering::Relaxed);
+                            }
+                        }
+                    });
                 });
 
                 ui.add_space(14.0);
@@ -362,9 +395,19 @@ impl eframe::App for App {
                         ui.label(egui::RichText::new(format!("routing to {device}")).size(12.0).color(MUTED));
                         ui.label(egui::RichText::new("In Discord / Zoom, choose mic: “CABLE Output”").size(12.0).color(TEXT));
                     } else {
-                        ui.label(egui::RichText::new("Speaker test mode").color(TEXT).strong());
-                        ui.label(egui::RichText::new(format!("playing to {device}")).size(12.0).color(MUTED));
-                        ui.label(egui::RichText::new("To use your phone as a mic in apps, set up the virtual microphone:").size(12.0).color(MUTED));
+                        ui.label(egui::RichText::new("No virtual microphone yet").color(TEXT).strong());
+                        ui.label(egui::RichText::new("Audio is muted by default so you don't hear yourself.").size(12.0).color(MUTED));
+                        ui.add_space(6.0);
+                        let mut mon = self.shared.monitor.load(Ordering::Relaxed);
+                        if ui
+                            .checkbox(&mut mon, "Test sound — play the phone mic on this PC")
+                            .on_hover_text(format!("Plays through {device}"))
+                            .changed()
+                        {
+                            self.shared.monitor.store(mon, Ordering::Relaxed);
+                        }
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new("To use your phone as a mic in Discord/Zoom, set up the virtual microphone:").size(12.0).color(MUTED));
                         ui.add_space(8.0);
                         let status = self.setup_status.lock().unwrap().clone();
                         let busy = status.as_deref() == Some("Downloading VB-CABLE…");
