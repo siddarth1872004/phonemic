@@ -23,6 +23,9 @@ android {
             cmake {
                 // C++17, and tell CMake we build a shared lib for JNI.
                 cppFlags += "-std=c++17"
+                // Oboe's prefab package is built against the shared C++ runtime,
+                // so we must match it (the NDK default is c++_static).
+                arguments += "-DANDROID_STL=c++_shared"
             }
         }
     }
