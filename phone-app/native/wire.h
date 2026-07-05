@@ -15,6 +15,7 @@
 #define PM_CODEC_PCM16  0
 #define PM_CODEC_OPUS   1
 #define PM_HEADER_LEN   18
+#define PM_ENCRYPTED    0x80    // OR'd into the codec byte when payload is encrypted
 
 static inline void pm_w16(uint8_t* p, uint16_t v) {
     p[0] = (uint8_t)(v & 0xFF);
@@ -27,16 +28,23 @@ static inline void pm_w64(uint8_t* p, uint64_t v) {
     for (int i = 0; i < 8; ++i) p[i] = (uint8_t)((v >> (8 * i)) & 0xFF);
 }
 
-// Encode header + payload into `out` (which must hold >= PM_HEADER_LEN + len
-// bytes). Returns the total number of bytes written.
-static inline int pm_encode(uint8_t codec, uint32_t seq, uint64_t timestamp_us,
-                            const uint8_t* payload, uint16_t len, uint8_t* out) {
+// Write just the 18-byte header. `codec` may already have PM_ENCRYPTED OR'd in.
+static inline void pm_write_header(uint8_t codec, uint32_t seq, uint64_t timestamp_us,
+                                   uint16_t len, uint8_t* out) {
     pm_w16(out + 0, PM_MAGIC);
     out[2] = PM_VERSION;
     out[3] = codec;
     pm_w32(out + 4, seq);
     pm_w64(out + 8, timestamp_us);
     pm_w16(out + 16, len);
+}
+
+// Encode header + (plaintext) payload into `out` (which must hold
+// >= PM_HEADER_LEN + len bytes). Returns the total number of bytes written.
+static inline int pm_encode(uint8_t codec, int encrypted, uint32_t seq,
+                            uint64_t timestamp_us, const uint8_t* payload,
+                            uint16_t len, uint8_t* out) {
+    pm_write_header((uint8_t)(codec | (encrypted ? PM_ENCRYPTED : 0)), seq, timestamp_us, len, out);
     memcpy(out + PM_HEADER_LEN, payload, len);
     return PM_HEADER_LEN + len;
 }

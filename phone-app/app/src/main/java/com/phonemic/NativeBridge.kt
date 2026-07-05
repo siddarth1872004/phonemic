@@ -25,7 +25,7 @@ object NativeBridge {
      * Returns true if the audio stream started. Safe to call once; call [stop]
      * before starting again.
      */
-    external fun start(pcIp: String, pcPort: Int): Boolean
+    external fun start(pcIp: String, pcPort: Int, pin: String): Boolean
 
     /** Stop streaming and release the audio stream. Idempotent. */
     external fun stop()

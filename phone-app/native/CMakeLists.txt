@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(phonemic LANGUAGES CXX)
+project(phonemic LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,7 @@ find_package(oboe REQUIRED CONFIG)
 add_library(phonemic SHARED
     jni_bridge.cpp
     audio_engine.cpp
+    monocypher.c
 )
 
 target_link_libraries(phonemic

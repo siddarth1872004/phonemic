@@ -17,7 +17,7 @@ use eframe::egui;
 use phonemic_core::denoise::Denoiser;
 use phonemic_core::sink::AudioSink;
 use phonemic_core::transport::{Transport, UdpTransport};
-use phonemic_protocol::{decode, pcm16_sample_count, Codec};
+use phonemic_protocol::{decode, Codec};
 
 const PORT: u16 = 4010;
 
@@ -29,8 +29,10 @@ struct Shared {
     last_packet_ms: AtomicU64,
     is_cable: AtomicBool,
     noise_suppression: AtomicBool, // UI toggle → receiver thread
+    dropped_encrypted: AtomicU64,  // encrypted packets we couldn't decrypt
     peer: Mutex<String>,
     device: Mutex<String>,
+    pin: Mutex<String>, // shared security PIN (empty = no encryption)
     error: Mutex<Option<String>>,
 }
 
@@ -89,15 +91,48 @@ fn spawn_receiver(shared: Arc<Shared>) {
         let mut denoiser = Denoiser::new();
         let mut denoised: Vec<i16> = Vec::with_capacity(1024);
         let mut buf = [0u8; 2048];
+        // Cache the derived key so we only recompute it when the PIN changes.
+        let mut cur_pin = String::new();
+        let mut key = phonemic_core::crypto::derive_key("");
         loop {
             let Ok((n, peer)) = transport.recv(&mut buf) else { continue };
+            let header_bytes = if n >= 18 { buf[..18].to_vec() } else { continue };
             let Ok((header, payload)) = decode(&buf[..n]) else { continue };
-            if header.codec != Codec::Pcm16 || pcm16_sample_count(payload).is_none() {
+            if header.codec != Codec::Pcm16 {
+                continue;
+            }
+
+            // Decrypt if the sender marked the payload encrypted.
+            let pcm_bytes: Vec<u8> = if header.encrypted {
+                let pin = shared.pin.lock().unwrap().clone();
+                if pin.is_empty() {
+                    shared.dropped_encrypted.fetch_add(1, Ordering::Relaxed);
+                    continue; // encrypted stream but no PIN set here
+                }
+                if pin != cur_pin {
+                    key = phonemic_core::crypto::derive_key(&pin);
+                    cur_pin = pin;
+                }
+                match phonemic_core::crypto::decrypt(
+                    &key, &header_bytes, header.seq, header.timestamp_us, payload,
+                ) {
+                    Some(pt) => pt,
+                    None => {
+                        // Wrong PIN / tampered — drop it.
+                        shared.dropped_encrypted.fetch_add(1, Ordering::Relaxed);
+                        continue;
+                    }
+                }
+            } else {
+                payload.to_vec()
+            };
+
+            if pcm_bytes.len() % 2 != 0 {
                 continue;
             }
             let mut peak: i16 = 0;
-            let mut samples = Vec::with_capacity(payload.len() / 2);
-            for pair in payload.chunks_exact(2) {
+            let mut samples = Vec::with_capacity(pcm_bytes.len() / 2);
+            for pair in pcm_bytes.chunks_exact(2) {
                 let s = i16::from_le_bytes([pair[0], pair[1]]);
                 let a = s.saturating_abs();
                 if a > peak {
@@ -125,7 +160,9 @@ fn spawn_receiver(shared: Arc<Shared>) {
 struct App {
     shared: Arc<Shared>,
     ip: String,
+    pin: String,
     level: f32, // smoothed meter value
+    setup_status: Arc<Mutex<Option<String>>>,
 }
 
 impl App {
@@ -135,9 +172,50 @@ impl App {
         App {
             shared,
             ip: local_ip(),
+            pin: String::new(),
             level: 0.0,
+            setup_status: Arc::new(Mutex::new(None)),
         }
     }
+}
+
+/// Download VB-CABLE and launch its (elevated) installer, so the whole
+/// "make my phone a real mic" setup happens from inside the app. VB-CABLE's
+/// installer still requires one click ("Install Driver") and a reboot — that
+/// part can't be silenced — but everything up to it is automated. Uses
+/// PowerShell so we add no HTTP/zip/elevation dependencies (minimal bloat).
+fn install_vbcable(status: Arc<Mutex<Option<String>>>) {
+    *status.lock().unwrap() = Some("Downloading VB-CABLE…".to_string());
+    std::thread::spawn(move || {
+        let script = r#"
+$ErrorActionPreference='Stop'
+$u='https://download.vb-audio.com/Download_CABLE/VBCABLE_Driver_Pack43.zip'
+$d=Join-Path $env:TEMP 'phonemic_vbcable'
+New-Item -ItemType Directory -Force $d | Out-Null
+$z=Join-Path $d 'vbcable.zip'
+Invoke-WebRequest -Uri $u -OutFile $z
+Expand-Archive -Path $z -DestinationPath $d -Force
+$exe=Join-Path $d 'VBCABLE_Setup_x64.exe'
+Start-Process -FilePath $exe -Verb RunAs
+"#;
+        let out = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", script])
+            .output();
+        let msg = match out {
+            Ok(o) if o.status.success() => {
+                "Installer opened. Click “Install Driver”, then REBOOT and reopen PhoneMic.".to_string()
+            }
+            Ok(o) => format!(
+                "Setup failed: {}",
+                String::from_utf8_lossy(&o.stderr)
+                    .lines()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("check your internet connection")
+            ),
+            Err(e) => format!("Couldn't launch setup: {e}"),
+        };
+        *status.lock().unwrap() = Some(msg);
+    });
 }
 
 impl eframe::App for App {
@@ -181,6 +259,21 @@ impl eframe::App for App {
                         }
                     });
                     ui.label(egui::RichText::new(format!("port {PORT}  •  enter this in the app, tap Start")).size(12.0).color(MUTED));
+
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("🔒").size(14.0));
+                        let resp = ui.add(
+                            egui::TextEdit::singleline(&mut self.pin)
+                                .hint_text("Security PIN (optional)")
+                                .desired_width(170.0),
+                        );
+                        if resp.changed() {
+                            *self.shared.pin.lock().unwrap() = self.pin.trim().to_string();
+                        }
+                    });
+                    ui.label(egui::RichText::new("Set the same PIN here and in the app to encrypt the audio.").size(11.0).color(MUTED));
+
                     ui.add_space(12.0);
 
                     // status pill
@@ -245,7 +338,24 @@ impl eframe::App for App {
                     } else {
                         ui.label(egui::RichText::new("Speaker test mode").color(TEXT).strong());
                         ui.label(egui::RichText::new(format!("playing to {device}")).size(12.0).color(MUTED));
-                        ui.label(egui::RichText::new("Install VB-CABLE (free) to use it as a mic in apps.").size(12.0).color(MUTED));
+                        ui.label(egui::RichText::new("To use your phone as a mic in apps, set up the virtual microphone:").size(12.0).color(MUTED));
+                        ui.add_space(8.0);
+                        let status = self.setup_status.lock().unwrap().clone();
+                        let busy = status.as_deref() == Some("Downloading VB-CABLE…");
+                        if ui
+                            .add_enabled(
+                                !busy,
+                                egui::Button::new(egui::RichText::new("⚙  Set up microphone").strong().color(TEXT))
+                                    .fill(ACCENT),
+                            )
+                            .clicked()
+                        {
+                            install_vbcable(self.setup_status.clone());
+                        }
+                        if let Some(msg) = status {
+                            ui.add_space(6.0);
+                            ui.label(egui::RichText::new(msg).size(12.0).color(if busy { MUTED } else { GREEN }));
+                        }
                     }
                 });
 

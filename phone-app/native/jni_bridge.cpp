@@ -16,13 +16,18 @@ std::unique_ptr<phonemic::AudioEngine> g_engine;
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jstring j_ip, jint port) {
+Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jstring j_ip, jint port,
+                                     jstring j_pin) {
     const char* ip_c = env->GetStringUTFChars(j_ip, nullptr);
     std::string ip(ip_c ? ip_c : "");
     env->ReleaseStringUTFChars(j_ip, ip_c);
 
+    const char* pin_c = env->GetStringUTFChars(j_pin, nullptr);
+    std::string pin(pin_c ? pin_c : "");
+    env->ReleaseStringUTFChars(j_pin, pin_c);
+
     if (!g_engine) g_engine = std::make_unique<phonemic::AudioEngine>();
-    return g_engine->start(ip, static_cast<uint16_t>(port)) ? JNI_TRUE : JNI_FALSE;
+    return g_engine->start(ip, static_cast<uint16_t>(port), pin) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

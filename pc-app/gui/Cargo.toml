@@ -15,5 +15,5 @@ path = "src/main.rs"
 [dependencies]
 # Native immediate-mode GUI (no web/webview). Renders a real OS window.
 eframe = "0.29"
-phonemic-core = { path = "../core", features = ["denoise"] }
+phonemic-core = { path = "../core", features = ["denoise", "crypto"] }
 phonemic-protocol = { path = "../../protocol" }

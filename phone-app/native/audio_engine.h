@@ -18,9 +18,10 @@ public:
     AudioEngine() = default;
     ~AudioEngine() override;
 
-    // Open the mic and start streaming PCM16 to pc_ip:pc_port. Returns false if
-    // the socket or audio stream could not be started.
-    bool start(const std::string& pc_ip, uint16_t pc_port);
+    // Open the mic and start streaming PCM16 to pc_ip:pc_port. If `pin` is
+    // non-empty, payloads are encrypted (XChaCha20-Poly1305, key from the PIN).
+    // Returns false if the socket or audio stream could not be started.
+    bool start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin);
 
     // Stop streaming and release the stream + socket. Idempotent.
     void stop();
@@ -43,6 +44,9 @@ private:
     std::atomic<int64_t> packets_sent_{0};
     std::atomic<float> input_level_{0.0f};
     std::atomic<int32_t> session_id_{-1};
+
+    bool encrypt_ = false;
+    uint8_t key_[32] = {0};
 
     // Scratch send buffer: header + up to a callback's worth of PCM16. Sized for
     // the worst realistic callback; larger frames are split across sends.

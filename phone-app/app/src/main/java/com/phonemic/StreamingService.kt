@@ -24,11 +24,12 @@ class StreamingService : Service() {
         val ip = intent?.getStringExtra(EXTRA_IP) ?: return START_NOT_STICKY
         val port = intent.getIntExtra(EXTRA_PORT, DEFAULT_PORT)
         val voiceFocus = intent.getBooleanExtra(EXTRA_VOICE_FOCUS, true)
+        val pin = intent.getStringExtra(EXTRA_PIN) ?: ""
 
         startForegroundNotification()
 
         // Native engine starts capture + UDP send on its own realtime thread.
-        if (NativeBridge.start(ip, port)) {
+        if (NativeBridge.start(ip, port, pin)) {
             // Attach the voice effects to the freshly-allocated capture session.
             effects.apply(NativeBridge.sessionId(), voiceFocus)
         }
@@ -68,6 +69,7 @@ class StreamingService : Service() {
         const val EXTRA_IP = "pc_ip"
         const val EXTRA_PORT = "pc_port"
         const val EXTRA_VOICE_FOCUS = "voice_focus"
+        const val EXTRA_PIN = "pin"
         const val DEFAULT_PORT = 4010
         private const val NOTIF_ID = 1
     }

@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pcm[i * 2 + 1] = b[1];
         }
         // Fixed sizes here, so encode cannot fail; treat any error as a bug.
-        let n = encode(Codec::Pcm16, seq, now_micros(), &pcm, &mut pkt)
+        let n = encode(Codec::Pcm16, false, seq, now_micros(), &pcm, &mut pkt)
             .expect("softphone frame always fits the packet buffer");
         sock.send(&pkt[..n])?;
         seq = seq.wrapping_add(1);

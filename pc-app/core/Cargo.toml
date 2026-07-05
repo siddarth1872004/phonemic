@@ -37,6 +37,12 @@ ringbuf = "0.4"
 # the lean console/core build stays dependency-light; the GUI opts in.
 nnnoiseless = { version = "0.5", default-features = false, optional = true }
 
+# Optional end-to-end encryption. XChaCha20-Poly1305 (interops with monocypher
+# on the phone) + BLAKE2b key derivation from a shared PIN. Pure Rust, no CMake.
+chacha20poly1305 = { version = "0.10", optional = true }
+blake2 = { version = "0.10", optional = true }
+
 [features]
 default = []
 denoise = ["dep:nnnoiseless"]
+crypto = ["dep:chacha20poly1305", "dep:blake2"]

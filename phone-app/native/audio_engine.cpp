@@ -8,7 +8,8 @@
 #include <chrono>
 #include <cstring>
 
-#include "wire.h"  // shared framing, cross-checked against the Rust decoder
+#include "wire.h"    // shared framing, cross-checked against the Rust decoder
+#include "crypto.h"  // XChaCha20-Poly1305 payload encryption (monocypher)
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "phonemic", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "phonemic", __VA_ARGS__)
@@ -33,8 +34,15 @@ sockaddr_in g_dest{};  // set in start(), read in the callback
 
 AudioEngine::~AudioEngine() { stop(); }
 
-bool AudioEngine::start(const std::string& pc_ip, uint16_t pc_port) {
+bool AudioEngine::start(const std::string& pc_ip, uint16_t pc_port,
+                        const std::string& pin) {
     stop();  // ensure clean state
+
+    // Derive the encryption key from the shared PIN (empty PIN = plaintext).
+    encrypt_ = !pin.empty();
+    if (encrypt_) {
+        pm_derive_key(pin.c_str(), key_);
+    }
 
     socket_fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
     if (socket_fd_ < 0) {
@@ -110,16 +118,31 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     input_level_.store(static_cast<float>(peak) / 32768.0f, std::memory_order_relaxed);
 
     // Chunk the callback into packets no bigger than kMaxPayloadBytes so the
-    // header math and the send buffer stay bounded.
-    uint8_t buf[PM_HEADER_LEN + kMaxPayloadBytes];
+    // header math and the send buffer stay bounded (+16 for the auth tag).
+    uint8_t buf[PM_HEADER_LEN + kMaxPayloadBytes + PM_TAG_LEN];
     int32_t offset_bytes = 0;
     while (offset_bytes < payload_bytes) {
         int32_t chunk = payload_bytes - offset_bytes;
         if (chunk > kMaxPayloadBytes) chunk = kMaxPayloadBytes;
 
         const uint8_t* src = reinterpret_cast<const uint8_t*>(samples) + offset_bytes;
-        int total = pm_encode(PM_CODEC_PCM16, seq_++, now_micros(), src,
+        uint32_t seq = seq_++;
+        uint64_t ts = now_micros();
+        int total;
+
+        if (encrypt_) {
+            // payload = ciphertext || 16-byte tag; header carries PM_ENCRYPTED
+            // and the encrypted length. The header (AAD) is written first so it
+            // authenticates the seq/timestamp the nonce is derived from.
+            uint16_t enc_len = static_cast<uint16_t>(chunk + PM_TAG_LEN);
+            pm_write_header(PM_CODEC_PCM16 | PM_ENCRYPTED, seq, ts, enc_len, buf);
+            pm_encrypt(key_, buf, PM_HEADER_LEN, seq, ts, src,
+                       static_cast<size_t>(chunk), buf + PM_HEADER_LEN);
+            total = PM_HEADER_LEN + enc_len;
+        } else {
+            total = pm_encode(PM_CODEC_PCM16, 0, seq, ts, src,
                               static_cast<uint16_t>(chunk), buf);
+        }
 
         ::sendto(socket_fd_, buf, total, 0,
                  reinterpret_cast<sockaddr*>(&g_dest), sizeof(g_dest));

@@ -25,6 +25,7 @@ import com.google.android.material.textfield.TextInputEditText
 class MainActivity : AppCompatActivity() {
 
     private lateinit var ipInput: TextInputEditText
+    private lateinit var pinInput: TextInputEditText
     private lateinit var statusText: TextView
     private lateinit var levelBar: LinearProgressIndicator
     private lateinit var voiceFocus: MaterialSwitch
@@ -54,14 +55,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         ipInput = findViewById(R.id.ipInput)
+        pinInput = findViewById(R.id.pinInput)
         statusText = findViewById(R.id.statusText)
         levelBar = findViewById(R.id.levelBar)
         voiceFocus = findViewById(R.id.voiceFocusSwitch)
         toggle = findViewById(R.id.toggleButton)
 
-        // Remember the last IP the user typed.
+        // Remember the last IP + PIN the user typed.
         val prefs = getPreferences(Context.MODE_PRIVATE)
         ipInput.setText(prefs.getString("ip", ""))
+        pinInput.setText(prefs.getString("pin", ""))
 
         toggle.setOnClickListener { onToggle() }
     }
@@ -82,12 +85,15 @@ class MainActivity : AppCompatActivity() {
             toast("Enter the PC IP shown in the PhoneMic window")
             return
         }
-        getPreferences(Context.MODE_PRIVATE).edit().putString("ip", ip).apply()
+        val pin = pinInput.text?.toString()?.trim().orEmpty()
+        getPreferences(Context.MODE_PRIVATE).edit()
+            .putString("ip", ip).putString("pin", pin).apply()
 
         val intent = Intent(this, StreamingService::class.java).apply {
             putExtra(StreamingService.EXTRA_IP, ip)
             putExtra(StreamingService.EXTRA_PORT, StreamingService.DEFAULT_PORT)
             putExtra(StreamingService.EXTRA_VOICE_FOCUS, voiceFocus.isChecked)
+            putExtra(StreamingService.EXTRA_PIN, pin)
         }
         ContextCompat.startForegroundService(this, intent)
 
@@ -95,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         toggle.text = "Stop"
         toggle.setBackgroundColor(getColor(R.color.muted))
         ipInput.isEnabled = false
+        pinInput.isEnabled = false
         voiceFocus.isEnabled = false
         handler.postDelayed(poll, 200)
     }
@@ -106,6 +113,7 @@ class MainActivity : AppCompatActivity() {
         toggle.text = "Start"
         toggle.setBackgroundColor(getColor(R.color.accent))
         ipInput.isEnabled = true
+        pinInput.isEnabled = true
         voiceFocus.isEnabled = true
         levelBar.setProgressCompat(0, true)
         statusText.text = "● Not connected"

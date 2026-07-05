@@ -23,7 +23,7 @@ int main() {
     // Known fields the Rust checker asserts on.
     uint8_t payload[8] = {0, 1, 2, 3, 4, 5, 6, 7};
     uint8_t out[64];
-    int n = pm_encode(PM_CODEC_PCM16, /*seq*/ 12345u,
+    int n = pm_encode(PM_CODEC_PCM16, /*encrypted*/ 0, /*seq*/ 12345u,
                       /*ts*/ 0x1122334455667788ULL, payload, 8, out);
     fwrite(out, 1, static_cast<size_t>(n), stdout);
     return 0;

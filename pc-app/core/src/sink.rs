@@ -20,11 +20,11 @@ use ringbuf::{HeapCons, HeapProd, HeapRb};
 /// both ends at 48 kHz avoids any resampling on the hot path in Phase 0.
 pub const SAMPLE_RATE: u32 = 48_000;
 
-/// Ring-buffer capacity in mono samples (~120 ms at 48 kHz). Kept small on
-/// purpose: the ring is a jitter cushion, not a store, so a small cap bounds the
-/// worst-case added latency (an overfull ring = audible delay). cpal drains it
-/// in real time, so it normally sits near-empty.
-const RING_CAPACITY: usize = (SAMPLE_RATE as usize) * 120 / 1000;
+/// Ring-buffer capacity in mono samples (~50 ms at 48 kHz). The ring is a jitter
+/// cushion, not a store: a small cap bounds worst-case added latency (an overfull
+/// ring = audible delay), and cpal drains it in real time so it sits near-empty.
+/// 50 ms is a good floor — smaller starts to glitch on Wi-Fi jitter.
+const RING_CAPACITY: usize = (SAMPLE_RATE as usize) * 50 / 1000;
 
 /// Owns the output stream and the producer half of the sample ring.
 pub struct AudioSink {

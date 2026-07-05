@@ -98,6 +98,9 @@ pub enum ProtocolError {
 pub struct PacketHeader {
     /// Codec of the payload.
     pub codec: Codec,
+    /// Whether the payload is encrypted (XChaCha20-Poly1305, ciphertext||tag).
+    /// Carried in bit 7 of the codec byte so old fields are untouched.
+    pub encrypted: bool,
     /// Monotonic sequence number, for loss / reorder detection.
     pub seq: u32,
     /// Capture timestamp in microseconds, on the phone's clock.
@@ -105,6 +108,9 @@ pub struct PacketHeader {
     /// Length of the payload that follows the header.
     pub payload_len: u16,
 }
+
+/// Bit of the codec byte that marks an encrypted payload.
+const ENCRYPTED_FLAG: u8 = 0x80;
 
 /// Is `version` a protocol version this build can decode?
 ///
@@ -124,6 +130,7 @@ pub fn is_version_supported(version: u8) -> bool {
 /// disagrees with its contents.
 pub fn encode(
     codec: Codec,
+    encrypted: bool,
     seq: u32,
     timestamp_us: u64,
     payload: &[u8],
@@ -142,7 +149,7 @@ pub fn encode(
 
     out[0..2].copy_from_slice(&MAGIC.to_le_bytes());
     out[2] = PROTOCOL_VERSION;
-    out[3] = codec.to_u8();
+    out[3] = codec.to_u8() | if encrypted { ENCRYPTED_FLAG } else { 0 };
     out[4..8].copy_from_slice(&seq.to_le_bytes());
     out[8..16].copy_from_slice(&timestamp_us.to_le_bytes());
     out[16..18].copy_from_slice(&(payload.len() as u16).to_le_bytes());
@@ -173,7 +180,9 @@ pub fn decode(buf: &[u8]) -> Result<(PacketHeader, &[u8]), ProtocolError> {
         return Err(ProtocolError::UnsupportedVersion(version));
     }
 
-    let codec = Codec::from_u8(buf[3])?;
+    let codec_byte = buf[3];
+    let encrypted = codec_byte & ENCRYPTED_FLAG != 0;
+    let codec = Codec::from_u8(codec_byte & !ENCRYPTED_FLAG)?;
     let seq = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
     let timestamp_us = u64::from_le_bytes([
         buf[8], buf[9], buf[10], buf[11], buf[12], buf[13], buf[14], buf[15],
@@ -190,6 +199,7 @@ pub fn decode(buf: &[u8]) -> Result<(PacketHeader, &[u8]), ProtocolError> {
 
     let header = PacketHeader {
         codec,
+        encrypted,
         seq,
         timestamp_us,
         payload_len,
@@ -221,15 +231,25 @@ mod tests {
 
     fn roundtrip(codec: Codec, seq: u32, ts: u64, payload: &[u8]) {
         let mut buf = [0u8; 512];
-        let n = encode(codec, seq, ts, payload, &mut buf).expect("encode ok");
+        let n = encode(codec, false, seq, ts, payload, &mut buf).expect("encode ok");
         assert_eq!(n, HEADER_LEN + payload.len());
 
         let (header, decoded_payload) = decode(&buf[..n]).expect("decode ok");
         assert_eq!(header.codec, codec);
+        assert!(!header.encrypted);
         assert_eq!(header.seq, seq);
         assert_eq!(header.timestamp_us, ts);
         assert_eq!(header.payload_len as usize, payload.len());
         assert_eq!(decoded_payload, payload);
+    }
+
+    #[test]
+    fn encrypted_flag_round_trips() {
+        let mut buf = [0u8; 64];
+        let n = encode(Codec::Opus, true, 1, 2, &[9, 9, 9], &mut buf).unwrap();
+        let (header, _) = decode(&buf[..n]).unwrap();
+        assert!(header.encrypted);
+        assert_eq!(header.codec, Codec::Opus, "codec still parsed under the flag");
     }
 
     #[test]
@@ -251,7 +271,7 @@ mod tests {
     #[test]
     fn magic_is_ascii_pm() {
         let mut buf = [0u8; 32];
-        encode(Codec::Pcm16, 0, 0, SAMPLE_PAYLOAD, &mut buf).unwrap();
+        encode(Codec::Pcm16, false, 0, 0, SAMPLE_PAYLOAD, &mut buf).unwrap();
         // "PM" on the wire, little-endian.
         assert_eq!(&buf[0..2], b"PM");
     }
@@ -265,7 +285,7 @@ mod tests {
     #[test]
     fn reject_bad_magic() {
         let mut buf = [0u8; 32];
-        let n = encode(Codec::Pcm16, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
+        let n = encode(Codec::Pcm16, false, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
         buf[0] ^= 0xFF; // corrupt magic
         match decode(&buf[..n]) {
             Err(ProtocolError::BadMagic(_)) => {}
@@ -276,7 +296,7 @@ mod tests {
     #[test]
     fn reject_unsupported_version() {
         let mut buf = [0u8; 32];
-        let n = encode(Codec::Pcm16, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
+        let n = encode(Codec::Pcm16, false, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
         buf[2] = PROTOCOL_VERSION.wrapping_add(1);
         assert_eq!(
             decode(&buf[..n]),
@@ -287,16 +307,16 @@ mod tests {
     #[test]
     fn reject_unknown_codec() {
         let mut buf = [0u8; 32];
-        let n = encode(Codec::Pcm16, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
-        buf[3] = 200; // not a known codec
-        assert_eq!(decode(&buf[..n]), Err(ProtocolError::UnknownCodec(200)));
+        let n = encode(Codec::Pcm16, false, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
+        buf[3] = 5; // not a known codec (low 7 bits; bit 7 is the encrypted flag)
+        assert_eq!(decode(&buf[..n]), Err(ProtocolError::UnknownCodec(5)));
     }
 
     #[test]
     fn reject_truncated_payload() {
         // Header claims 10 payload bytes but the datagram carries only 5.
         let mut buf = [0u8; 32];
-        let n = encode(Codec::Pcm16, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
+        let n = encode(Codec::Pcm16, false, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
         let truncated = &buf[..n - 5];
         match decode(truncated) {
             Err(ProtocolError::PayloadLenMismatch { declared, actual }) => {
@@ -312,7 +332,7 @@ mod tests {
         // Extra bytes beyond the declared payload also fail, rather than being
         // silently accepted as a valid packet.
         let mut buf = [0u8; 64];
-        let n = encode(Codec::Pcm16, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
+        let n = encode(Codec::Pcm16, false, 1, 1, SAMPLE_PAYLOAD, &mut buf).unwrap();
         let with_garbage = &buf[..n + 3];
         match decode(with_garbage) {
             Err(ProtocolError::PayloadLenMismatch { declared, actual }) => {
@@ -326,7 +346,7 @@ mod tests {
     #[test]
     fn encode_rejects_small_output() {
         let mut small = [0u8; HEADER_LEN + 2];
-        let err = encode(Codec::Pcm16, 0, 0, SAMPLE_PAYLOAD, &mut small).unwrap_err();
+        let err = encode(Codec::Pcm16, false, 0, 0, SAMPLE_PAYLOAD, &mut small).unwrap_err();
         assert_eq!(
             err,
             ProtocolError::OutputTooSmall {
