@@ -25,7 +25,27 @@ Until then, development runs under test-signing only. This is a hard requirement
 before PhoneMic ships the driver to end users and is called out here so it is
 never a surprise.
 
-## Own build system
+## Files
 
-This subdirectory has its own MSBuild/WDK build, separate from the Cargo
-workspace. It is intentionally not a Cargo member.
+- `driver.h` — device/stream contexts, format, component GUID, callback decls.
+- `driver.c` — `DriverEntry` → `PhonemicEvtDeviceAdd` → `PhonemicCreateCaptureCircuit`
+  → `PhonemicEvtCircuitCreateStream`; the ACX capture circuit whose RT packets
+  are pulled from the shared ring.
+- `phonemic.inf` — root-enumerated MEDIA-class install (placeholder GUIDs).
+- `../ipc/ring.h` — the SPSC shared-memory ring contract the stream reads from.
+
+## Status: code-complete against the ACX model, NOT yet built
+
+The source follows the `sysvad` ACX capture structure and is internally
+consistent, but it has **not been compiled** — there is no WDK in the dev
+environment, so ACX signatures are reviewed-but-unverified. The remaining work
+to a working driver: build against the WDK, wire the establishing IOCTL that
+maps the user-mode ring section, and implement the three RT stream callbacks
+(`Run`/`Pause`/`GetCapturePacket`) whose bodies copy from `PHONEMIC_RING`.
+
+## Build (when a WDK is available)
+
+Own MSBuild/WDK build, separate from the Cargo workspace (intentionally not a
+Cargo member). Needs: WDK matching the installed Visual Studio, test-signing
+enabled (`bcdedit /set testsigning on`), then `stampinf` + `signtool` for a test
+`.cat`. Install with `pnputil /add-driver phonemic.inf /install`.

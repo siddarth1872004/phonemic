@@ -1,0 +1,59 @@
+;
+; phonemic.inf — PhoneMic virtual audio capture driver.
+;
+; Installs a software-enumerated (root) ACX audio device exposing one capture
+; endpoint. Requires test-signing during development (see README.md). NOT a
+; finished/signed package — the class GUIDs and versions below are placeholders
+; to be finalized when built against a real WDK.
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = MEDIA
+ClassGuid   = {4d36e96c-e325-11ce-bfc1-08002be10318}
+Provider    = %ManufacturerName%
+CatalogFile = phonemic.cat
+DriverVer   = ; set by stampinf during build
+PnpLockdown = 1
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64.10.0...19041
+
+[Standard.NTamd64.10.0...19041]
+%Phonemic.DeviceDesc% = Phonemic_Install, Root\PhonemicCapture
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[SourceDisksFiles]
+phonemic.sys = 1
+
+[DestinationDirs]
+DefaultDestDir = 13 ; DIRID_DRIVERS (driver store package dir)
+
+[Phonemic_Install.NT]
+CopyFiles = Phonemic_CopyFiles
+
+[Phonemic_CopyFiles]
+phonemic.sys
+
+[Phonemic_Install.NT.Services]
+AddService = phonemic, 0x00000002, Phonemic_Service
+
+[Phonemic_Service]
+DisplayName   = %Phonemic.DeviceDesc%
+ServiceType   = 1 ; SERVICE_KERNEL_DRIVER
+StartType     = 3 ; SERVICE_DEMAND_START
+ErrorControl  = 1 ; SERVICE_ERROR_NORMAL
+ServiceBinary = %13%\phonemic.sys
+
+[Phonemic_Install.NT.Wdf]
+KmdfService = phonemic, Phonemic_wdfsect
+
+[Phonemic_wdfsect]
+KmdfLibraryVersion = 1.33
+
+[Strings]
+ManufacturerName    = "PhoneMic Project"
+DiskName            = "PhoneMic Installation Disk"
+Phonemic.DeviceDesc = "PhoneMic Microphone (virtual)"
