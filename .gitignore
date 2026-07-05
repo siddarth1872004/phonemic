@@ -28,3 +28,7 @@ pc-app/driver/**/Release/
 *.user
 .DS_Store
 Thumbs.db
+
+# Android native build intermediates (any level)
+**/.cxx/
+phone-app/app/build/

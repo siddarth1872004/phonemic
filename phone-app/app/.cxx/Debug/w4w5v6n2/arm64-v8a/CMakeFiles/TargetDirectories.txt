@@ -1,3 +1,0 @@
-C:/Users/Siddarth/phonemic/phone-app/app/.cxx/Debug/w4w5v6n2/arm64-v8a/CMakeFiles/phonemic.dir
-C:/Users/Siddarth/phonemic/phone-app/app/.cxx/Debug/w4w5v6n2/arm64-v8a/CMakeFiles/edit_cache.dir
-C:/Users/Siddarth/phonemic/phone-app/app/.cxx/Debug/w4w5v6n2/arm64-v8a/CMakeFiles/rebuild_cache.dir
