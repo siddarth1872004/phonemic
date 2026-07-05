@@ -31,3 +31,12 @@ cpal = "0.15"
 # by the network thread. `ringbuf` is tiny, dependency-free, and purpose-built
 # for exactly this producer(net)/consumer(audio) handoff.
 ringbuf = "0.4"
+
+# RNNoise noise suppression, pure-Rust port (no C, no CMake). Operates on the
+# exact 480-sample / 48 kHz frames we already use. Optional + off by default so
+# the lean console/core build stays dependency-light; the GUI opts in.
+nnnoiseless = { version = "0.5", default-features = false, optional = true }
+
+[features]
+default = []
+denoise = ["dep:nnnoiseless"]

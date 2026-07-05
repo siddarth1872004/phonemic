@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "protocol",
     "pc-app/core",
+    "pc-app/gui",
     "pc-app/ipc",
     "pc-app/web-gateway",
 ]
@@ -25,8 +26,10 @@ authors = ["The PhoneMic Authors"]
 repository = "https://github.com/phonemic/phonemic"
 rust-version = "1.80"
 
-# Thin, fast release profile for the audio hot path.
+# Thin, fast, small release profile for the audio hot path.
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
+strip = true          # drop symbols — smaller exe, minimal bloat
+panic = "abort"       # no unwinding tables — smaller + slightly faster

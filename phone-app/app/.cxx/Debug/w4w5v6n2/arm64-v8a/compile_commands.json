@@ -1,0 +1,12 @@
+[
+{
+  "directory": "C:/Users/Siddarth/phonemic/phone-app/app/.cxx/Debug/w4w5v6n2/arm64-v8a",
+  "command": "C:\\Users\\Siddarth\\AppData\\Local\\Android\\Sdk\\ndk\\26.1.10909125\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=aarch64-none-linux-android29 --sysroot=C:/Users/Siddarth/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dphonemic_EXPORTS -isystem C:/Users/Siddarth/.gradle/caches/transforms-4/ebdf4c73c2f268f3b01ebe757135409b/transformed/oboe-1.9.0/prefab/modules/oboe/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -std=c++17 -o CMakeFiles\\phonemic.dir\\jni_bridge.cpp.o -c C:\\Users\\Siddarth\\phonemic\\phone-app\\native\\jni_bridge.cpp",
+  "file": "C:\\Users\\Siddarth\\phonemic\\phone-app\\native\\jni_bridge.cpp"
+},
+{
+  "directory": "C:/Users/Siddarth/phonemic/phone-app/app/.cxx/Debug/w4w5v6n2/arm64-v8a",
+  "command": "C:\\Users\\Siddarth\\AppData\\Local\\Android\\Sdk\\ndk\\26.1.10909125\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe --target=aarch64-none-linux-android29 --sysroot=C:/Users/Siddarth/AppData/Local/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/sysroot -Dphonemic_EXPORTS -isystem C:/Users/Siddarth/.gradle/caches/transforms-4/ebdf4c73c2f268f3b01ebe757135409b/transformed/oboe-1.9.0/prefab/modules/oboe/include -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fno-limit-debug-info  -fPIC -std=c++17 -o CMakeFiles\\phonemic.dir\\audio_engine.cpp.o -c C:\\Users\\Siddarth\\phonemic\\phone-app\\native\\audio_engine.cpp",
+  "file": "C:\\Users\\Siddarth\\phonemic\\phone-app\\native\\audio_engine.cpp"
+}
+]

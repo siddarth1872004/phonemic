@@ -35,4 +35,8 @@ object NativeBridge {
 
     /** Most recent input peak level in [0.0, 1.0], for a level meter. */
     external fun inputLevel(): Float
+
+    /** Audio session id of the running input stream, or -1. Used to attach the
+     *  Android voice effects (noise suppressor / echo canceller / auto gain). */
+    external fun sessionId(): Int
 }

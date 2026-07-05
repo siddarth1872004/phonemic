@@ -40,4 +40,9 @@ Java_com_phonemic_NativeBridge_inputLevel(JNIEnv*, jobject) {
     return g_engine ? g_engine->input_level() : 0.0f;
 }
 
+JNIEXPORT jint JNICALL
+Java_com_phonemic_NativeBridge_sessionId(JNIEnv*, jobject) {
+    return g_engine ? static_cast<jint>(g_engine->session_id()) : -1;
+}
+
 }  // extern "C"

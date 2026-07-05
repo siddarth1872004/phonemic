@@ -1,0 +1,19 @@
+[package]
+name = "phonemic-gui"
+description = "Native Windows GUI for PhoneMic: shows the IP, connection status, and a live mic-level meter."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "PhoneMic"
+path = "src/main.rs"
+
+[dependencies]
+# Native immediate-mode GUI (no web/webview). Renders a real OS window.
+eframe = "0.29"
+phonemic-core = { path = "../core", features = ["denoise"] }
+phonemic-protocol = { path = "../../protocol" }

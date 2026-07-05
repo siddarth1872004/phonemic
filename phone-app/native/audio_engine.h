@@ -27,6 +27,9 @@ public:
 
     int64_t packets_sent() const { return packets_sent_.load(std::memory_order_relaxed); }
     float input_level() const { return input_level_.load(std::memory_order_relaxed); }
+    // Audio session id of the input stream, so Kotlin can attach Android audio
+    // effects (NoiseSuppressor / AEC / AGC). -1 until the stream is started.
+    int32_t session_id() const { return session_id_.load(std::memory_order_relaxed); }
 
     // oboe::AudioStreamDataCallback
     oboe::DataCallbackResult onAudioReady(
@@ -39,6 +42,7 @@ private:
 
     std::atomic<int64_t> packets_sent_{0};
     std::atomic<float> input_level_{0.0f};
+    std::atomic<int32_t> session_id_{-1};
 
     // Scratch send buffer: header + up to a callback's worth of PCM16. Sized for
     // the worst realistic callback; larger frames are split across sends.

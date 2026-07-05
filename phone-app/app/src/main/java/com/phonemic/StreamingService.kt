@@ -16,20 +16,27 @@ import android.os.IBinder
  */
 class StreamingService : Service() {
 
+    private val effects = VoiceEffects()
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val ip = intent?.getStringExtra(EXTRA_IP) ?: return START_NOT_STICKY
         val port = intent.getIntExtra(EXTRA_PORT, DEFAULT_PORT)
+        val voiceFocus = intent.getBooleanExtra(EXTRA_VOICE_FOCUS, true)
 
         startForegroundNotification()
 
         // Native engine starts capture + UDP send on its own realtime thread.
-        NativeBridge.start(ip, port)
+        if (NativeBridge.start(ip, port)) {
+            // Attach the voice effects to the freshly-allocated capture session.
+            effects.apply(NativeBridge.sessionId(), voiceFocus)
+        }
         return START_STICKY
     }
 
     override fun onDestroy() {
+        effects.release()
         NativeBridge.stop()
         super.onDestroy()
     }
@@ -60,6 +67,7 @@ class StreamingService : Service() {
     companion object {
         const val EXTRA_IP = "pc_ip"
         const val EXTRA_PORT = "pc_port"
+        const val EXTRA_VOICE_FOCUS = "voice_focus"
         const val DEFAULT_PORT = 4010
         private const val NOTIF_ID = 1
     }

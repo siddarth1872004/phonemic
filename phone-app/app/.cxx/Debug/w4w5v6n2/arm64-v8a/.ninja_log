@@ -1,0 +1,7 @@
+# ninja log v5
+0	1878	8049375076941384	CMakeFiles/phonemic.dir/jni_bridge.cpp.o	80ca2984d4f7013d
+8	1918	8049375077353763	CMakeFiles/phonemic.dir/audio_engine.cpp.o	6281933537065308
+1918	2137	8049375079523061	C:/Users/Siddarth/phonemic/phone-app/app/build/intermediates/cxx/Debug/w4w5v6n2/obj/arm64-v8a/libphonemic.so	128f719fefce5c2
+10	2117	8049390636631159	CMakeFiles/phonemic.dir/jni_bridge.cpp.o	80ca2984d4f7013d
+35	2153	8049390637008482	CMakeFiles/phonemic.dir/audio_engine.cpp.o	6281933537065308
+2153	2504	8049390640501111	C:/Users/Siddarth/phonemic/phone-app/app/build/intermediates/cxx/Debug/w4w5v6n2/obj/arm64-v8a/libphonemic.so	128f719fefce5c2

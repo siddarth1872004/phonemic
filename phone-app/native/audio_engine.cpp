@@ -58,6 +58,8 @@ bool AudioEngine::start(const std::string& pc_ip, uint16_t pc_port) {
         ->setChannelCount(kChannels)
         ->setSampleRate(kSampleRate)
         ->setInputPreset(oboe::InputPreset::VoiceCommunication)
+        // Allocate a session id so Kotlin can attach NoiseSuppressor/AEC/AGC.
+        ->setSessionId(oboe::SessionId::Allocate)
         ->setDataCallback(this);
 
     oboe::Result result = builder.openStream(stream_);
@@ -69,6 +71,7 @@ bool AudioEngine::start(const std::string& pc_ip, uint16_t pc_port) {
 
     seq_ = 0;
     packets_sent_.store(0);
+    session_id_.store(stream_->getSessionId());
     result = stream_->requestStart();
     if (result != oboe::Result::OK) {
         LOGE("requestStart failed: %s", oboe::convertToText(result));
