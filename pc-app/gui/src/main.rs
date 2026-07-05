@@ -30,6 +30,9 @@ struct Shared {
     is_cable: AtomicBool,
     noise_suppression: AtomicBool, // UI toggle → receiver thread
     dropped_encrypted: AtomicU64,  // encrypted packets we couldn't decrypt
+    datagrams: AtomicU64,          // every UDP datagram, before any parsing
+    last_datagram_ms: AtomicU64,   // when the last datagram (any) arrived
+    last_drop_ms: AtomicU64,       // when we last dropped an encrypted packet
     peer: Mutex<String>,
     device: Mutex<String>,
     pin: Mutex<String>, // shared security PIN (empty = no encryption)
@@ -96,6 +99,10 @@ fn spawn_receiver(shared: Arc<Shared>) {
         let mut key = phonemic_core::crypto::derive_key("");
         loop {
             let Ok((n, peer)) = transport.recv(&mut buf) else { continue };
+            // Count every datagram before parsing, so the UI can distinguish
+            // "nothing reaches this PC" from "data arrives but is dropped".
+            shared.datagrams.fetch_add(1, Ordering::Relaxed);
+            shared.last_datagram_ms.store(now_ms(), Ordering::Relaxed);
             let header_bytes = if n >= 18 { buf[..18].to_vec() } else { continue };
             let Ok((header, payload)) = decode(&buf[..n]) else { continue };
             if header.codec != Codec::Pcm16 {
@@ -104,10 +111,15 @@ fn spawn_receiver(shared: Arc<Shared>) {
 
             // Decrypt if the sender marked the payload encrypted.
             let pcm_bytes: Vec<u8> = if header.encrypted {
+                let mut drop_it = || {
+                    shared.dropped_encrypted.fetch_add(1, Ordering::Relaxed);
+                    shared.last_drop_ms.store(now_ms(), Ordering::Relaxed);
+                    *shared.peer.lock().unwrap() = peer.ip().to_string();
+                };
                 let pin = shared.pin.lock().unwrap().clone();
                 if pin.is_empty() {
-                    shared.dropped_encrypted.fetch_add(1, Ordering::Relaxed);
-                    continue; // encrypted stream but no PIN set here
+                    drop_it(); // encrypted stream but no PIN set here
+                    continue;
                 }
                 if pin != cur_pin {
                     key = phonemic_core::crypto::derive_key(&pin);
@@ -118,8 +130,7 @@ fn spawn_receiver(shared: Arc<Shared>) {
                 ) {
                     Some(pt) => pt,
                     None => {
-                        // Wrong PIN / tampered — drop it.
-                        shared.dropped_encrypted.fetch_add(1, Ordering::Relaxed);
+                        drop_it(); // wrong PIN / tampered
                         continue;
                     }
                 }
@@ -276,15 +287,30 @@ impl eframe::App for App {
 
                     ui.add_space(12.0);
 
-                    // status pill
-                    let (dot, txt) = if connected {
-                        (GREEN, format!("Connected — {}", self.shared.peer.lock().unwrap()))
+                    // Status pill with real diagnostics: distinguish "nothing is
+                    // reaching this PC" from "packets arrive but get dropped".
+                    let now = now_ms();
+                    let dropping = now.saturating_sub(self.shared.last_drop_ms.load(Ordering::Relaxed)) < 1500;
+                    let data_arriving = now.saturating_sub(self.shared.last_datagram_ms.load(Ordering::Relaxed)) < 1500;
+                    let amber = egui::Color32::from_rgb(0xE0, 0x8A, 0x2B);
+                    let (dot, txt, col) = if connected {
+                        (GREEN, format!("Connected — {}", self.shared.peer.lock().unwrap()), TEXT)
+                    } else if dropping {
+                        let pin_set = !self.shared.pin.lock().unwrap().is_empty();
+                        let why = if pin_set {
+                            "Encrypted audio arriving but the PIN doesn't match — retype it on both ends"
+                        } else {
+                            "Encrypted audio arriving — type the phone's PIN above to unlock it"
+                        };
+                        (amber, why.to_string(), amber)
+                    } else if data_arriving {
+                        (amber, "Data arriving but unreadable — reinstall the latest app on the phone".to_string(), amber)
                     } else {
-                        (MUTED, "Waiting for phone…".to_string())
+                        (MUTED, "Waiting for phone…  (same Wi-Fi, IP above, tap Start)".to_string(), MUTED)
                     };
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(egui::RichText::new("●").color(dot).size(14.0));
-                        ui.label(egui::RichText::new(txt).color(if connected { TEXT } else { MUTED }));
+                        ui.label(egui::RichText::new(txt).color(col));
                     });
                 });
 
@@ -362,7 +388,16 @@ impl eframe::App for App {
                 // ---- Footer ----
                 ui.add_space(10.0);
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                    ui.label(egui::RichText::new(format!("{} packets", self.shared.packets.load(Ordering::Relaxed))).size(11.0).color(MUTED));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} played  •  {} received  •  {} dropped (PIN)",
+                            self.shared.packets.load(Ordering::Relaxed),
+                            self.shared.datagrams.load(Ordering::Relaxed),
+                            self.shared.dropped_encrypted.load(Ordering::Relaxed),
+                        ))
+                        .size(11.0)
+                        .color(MUTED),
+                    );
                 });
             });
 
