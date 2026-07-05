@@ -9,8 +9,18 @@ buffer.
 
 **Platforms:** Android (phone) + Windows 11 (PC + driver). No macOS/Linux yet.
 
-**Status:** Phase 0 (loopback proof of life). See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the roadmap.
+**Status:** the **web path works today** — a phone browser streams its mic to
+the PC over HTTPS/WebSocket, through the jitter buffer, out the speakers
+(verified end-to-end). The native Android path and the virtual driver are
+written and waiting on toolchains/hardware. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full status table.
+
+## Two ways in
+
+- **Web (works now):** phone opens a web page — no install. See
+  [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md).
+- **Native (lowest latency, USB/BT):** the Oboe + Kotlin app. Needs the Android
+  toolchain; see [docs/PHASE0-BRINGUP.md](docs/PHASE0-BRINGUP.md).
 
 ## Layout
 
@@ -24,15 +34,23 @@ buffer.
 /docs           PROTOCOL.md, ARCHITECTURE.md, BUILDING.md
 ```
 
-## Quick start (PC receiver, works today)
+## Quick start
 
 ```sh
-cargo test -p phonemic-protocol     # 13 passing framing tests
-cargo run  -p phonemic-core         # listens on udp :4010, plays to speakers
+# Rust core: framing + jitter-buffer tests (25 total), all green
+cargo test
+
+# Web path (needs w64devkit on PATH for `as`; see docs/BUILDING.md):
+cargo run -p phonemic-web-gateway   # https://<pc-ip>:8443  → open on phone
+
+# PC loopback demo without any phone:
+cargo run -p phonemic-core          # udp :4010 → speakers
+# in another shell, the software phone:
+cargo run -p phonemic-core --bin softphone
 ```
 
-Building the phone app needs the Android SDK/NDK/CMake/JDK 17 — see
-[docs/BUILDING.md](docs/BUILDING.md).
+Building the native Android app needs the Android SDK/NDK/CMake/JDK 17 — see
+[docs/BUILDING.md](docs/BUILDING.md) and [docs/PHASE0-BRINGUP.md](docs/PHASE0-BRINGUP.md).
 
 ## License
 

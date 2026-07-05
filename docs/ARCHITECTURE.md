@@ -65,7 +65,21 @@ layer (via cbindgen/JNI) so there is exactly one framing implementation.
 
 ## Status
 
-Phase 0 scaffolded. Rust `/protocol` (13 passing tests) and `/pc-app/core`
-receiver build and run on this machine. The Android half is scaffolded but
-**not yet buildable here** — it needs Android SDK + NDK + CMake + JDK 17+
-installed (see `BUILDING.md`). Audible end-to-end loop is pending that toolchain.
+| Area | State |
+|---|---|
+| `/protocol` | ✅ built, 13 tests |
+| jitter buffer (`core`) | ✅ built, 12 tests |
+| PC UDP receiver + `softphone` + `--measure` | ✅ built; measured loopback median 0.15 ms |
+| **Web client + gateway** (HTTPS/wss → decode → jitter buffer → speaker) | ✅ **built and verified live** (200-frame stream incl. reorder + loss) |
+| C++ phone framing (`wire.h`) | ✅ **cross-checked byte-for-byte against the Rust decoder** |
+| Phone app (Kotlin + Oboe/native) | 📝 written; needs Android SDK/NDK/JDK17 to build (no device here) |
+| Opus codec | ⏸ deferred — CMake installed, but the libopus Rust bindings hit Windows/MinGW build bugs; PCM16 works today |
+| Phase 4 ACX driver + IPC ring | 📝 code-complete against the ACX model; needs the WDK to build |
+
+Two dev-toolchain notes for this machine: the web gateway needs `w64devkit`
+(already installed) on `PATH` for its `as`/`dlltool`; `protocol` + `core` build
+on the bare toolchain. See `BUILDING.md` and `WEB-CLIENT.md`.
+
+What remains is gated on **installs/hardware only**, not design: an Android
+toolchain + a phone (native path), and the WDK (driver). The web path is a
+working, verified way to stream a phone mic to the PC today.

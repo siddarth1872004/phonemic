@@ -37,6 +37,21 @@ The receiver collects 300 packets and prints one-way latency (min/median/p95/max
 real phone adds Oboe capture + Wi-Fi, measured with the clap test in
 [PHASE0-BRINGUP.md](PHASE0-BRINGUP.md).
 
+### Web gateway (needs a complete toolchain)
+
+`phonemic-web-gateway` uses TLS, which pulls `raw-dylib` crates that the bare
+windows-gnu toolchain can't build (missing `as`). On this machine, put the
+already-installed **w64devkit** on `PATH` first:
+
+```sh
+export PATH="/c/Users/Siddarth/w64devkit/bin:$PATH"   # provides as + dlltool
+cargo run -p phonemic-web-gateway                      # https://<pc-ip>:8443
+```
+
+Then open `https://<pc-ip>:8443/` on the phone, accept the self-signed cert, and
+tap Start mic. See [WEB-CLIENT.md](WEB-CLIENT.md) for the full story and the
+MSVC alternative.
+
 The receiver prints the address it's listening on. Point the phone app at this
 PC's LAN IP and port 4010.
 

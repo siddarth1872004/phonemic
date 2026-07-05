@@ -72,3 +72,19 @@ fails with `dlltool ... CreateProcess`. Two fixes:
 
 `protocol` and `pc-app/core` build fine on the bare gnu toolchain (they avoid
 `raw-dylib`), which is why they remain the workspace's `default-members`.
+
+On this dev machine the gateway builds by putting the already-installed
+**w64devkit** (`C:\Users\Siddarth\w64devkit\bin`, which has `as` + `dlltool`) on
+`PATH` before `cargo build -p phonemic-web-gateway`. It has been built and
+verified end-to-end there (served the page over HTTPS and streamed 200 PCM16
+frames — including reordered and dropped frames — through the jitter buffer).
+
+### Opus status (deferred)
+
+CMake is installed, but the Rust libopus bindings tried (`audiopus_sys`,
+`opusic-sys`) both hit Windows/MinGW build-script bugs (an extended-path `cp`
+failure, and a CMake+Ninja compiler self-test failure with w64devkit's `ar`).
+PCM16 works today, so Opus is deferred. Paths to enable it: build libopus once
+by hand and link the `opus` crate via `pkg-config`, or build on an MSVC
+toolchain where these `-sys` crates work out of the box. Opus's value (PLC, lower
+bitrate) matters most for Bluetooth/internet, not the LAN web path.
