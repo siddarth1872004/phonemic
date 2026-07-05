@@ -21,6 +21,8 @@ written and waiting on toolchains/hardware. See
   [docs/WEB-CLIENT.md](docs/WEB-CLIENT.md).
 - **Native (lowest latency, USB/BT):** the Oboe + Kotlin app. Needs the Android
   toolchain; see [docs/PHASE0-BRINGUP.md](docs/PHASE0-BRINGUP.md).
+- **Real virtual mic (driver):** the ACX driver + gateway `--driver` mode. See
+  [docs/TIER2-3-HANDOFF.md](docs/TIER2-3-HANDOFF.md).
 
 ## Layout
 
