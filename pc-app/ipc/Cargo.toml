@@ -1,0 +1,18 @@
+[package]
+name = "phonemic-ipc"
+description = "User-mode side of the core<->driver shared-memory ring (mirror of ring.h)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "phonemic_ipc"
+path = "src/lib.rs"
+
+# Deliberately dependency-free: the ring logic works over a raw pointer, so it
+# builds and unit-tests on the bare toolchain. The actual Windows section
+# mapping (which needs the `windows` crate) lives in the gateway's --driver path.
+[dependencies]

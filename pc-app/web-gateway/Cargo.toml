@@ -17,6 +17,16 @@ path = "src/main.rs"
 phonemic-protocol = { path = "../../protocol" }
 # Shared jitter buffer (reorder + loss concealment), unit-tested in core.
 phonemic-core = { path = "../core" }
+# Shared-ring producer for the --driver path (writes PCM the driver consumes).
+phonemic-ipc = { path = "../ipc" }
+
+# Only needed for the --driver path: create + map the shared section.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_Security",
+] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 axum = { version = "0.7", features = ["ws"] }

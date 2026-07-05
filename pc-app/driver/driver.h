@@ -31,24 +31,52 @@ DEFINE_GUID(PHONEMIC_CIRCUIT_COMPONENT_GUID,
 #define PHONEMIC_CHANNELS      1
 #define PHONEMIC_BITS_PER_SAMPLE 16
 
+// The user-mode core creates a named section at this path and fills it with
+// PCM; the driver maps it read-only on stream start. A well-known name avoids
+// handle duplication — the "establishing IOCTL" degenerates to this contract.
+#define PHONEMIC_RING_SECTION_NAME L"\\BaseNamedObjects\\PhonemicRing"
+
+// 10 ms of audio per RT packet, and a small ring of packets for the capture RT
+// model. Frame size must match the user-mode producer's cadence.
+#define PHONEMIC_PACKET_SAMPLES  (PHONEMIC_SAMPLE_RATE / 100)   // 480
+#define PHONEMIC_PACKET_BYTES    (PHONEMIC_PACKET_SAMPLES * sizeof(INT16))
+#define PHONEMIC_PACKET_COUNT    4
+
 // Per-device context.
 typedef struct _PHONEMIC_DEVICE_CONTEXT {
     ACXCIRCUIT  Circuit;        // the capture circuit we publish
-    PHONEMIC_RING* Ring;        // mapped shared ring (producer = user mode)
-    PMDL        RingMdl;        // MDL describing the ring section
-    HANDLE      RingSection;    // section handle from the establishing IOCTL
 } PHONEMIC_DEVICE_CONTEXT, *PPHONEMIC_DEVICE_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PHONEMIC_DEVICE_CONTEXT, PhonemicDeviceGetContext)
 
-// Per-stream context.
+// Per-stream context: owns the ring mapping and the RT packet pump.
 typedef struct _PHONEMIC_STREAM_CONTEXT {
     PPHONEMIC_DEVICE_CONTEXT Device;
-    BOOLEAN Running;
+
+    // Mapped shared ring (produced by user mode).
+    HANDLE          SectionHandle;
+    PVOID           RingBase;       // mapped view; cast to PHONEMIC_RING*
+    PHONEMIC_RING*  Ring;
+
+    // ACX RT capture packets the audio stack reads from.
+    PVOID           Packets[PHONEMIC_PACKET_COUNT];
+    ULONG           CurrentPacket;  // index of the last completed packet
+    ULONGLONG       RingReadIndex;  // our consumer cursor into Ring->samples
+
+    // Timer that copies one packet's worth of samples every 10 ms.
+    WDFTIMER        PumpTimer;
+    BOOLEAN         Running;
 } PHONEMIC_STREAM_CONTEXT, *PPHONEMIC_STREAM_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PHONEMIC_STREAM_CONTEXT, PhonemicStreamGetContext)
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD PhonemicEvtDeviceAdd;
 EVT_ACX_CIRCUIT_CREATE_STREAM PhonemicEvtCircuitCreateStream;
+EVT_ACX_STREAM_PREPARE_HARDWARE PhonemicEvtStreamPrepare;
+EVT_ACX_STREAM_RUN PhonemicEvtStreamRun;
+EVT_ACX_STREAM_PAUSE PhonemicEvtStreamPause;
+EVT_ACX_STREAM_GET_CAPTURE_PACKET PhonemicEvtStreamGetCapturePacket;
+EVT_WDF_TIMER PhonemicEvtPumpTimer;
 
 NTSTATUS PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device);
+NTSTATUS PhonemicMapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Stream);
+VOID     PhonemicUnmapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Stream);

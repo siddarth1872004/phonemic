@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "protocol",
     "pc-app/core",
+    "pc-app/ipc",
     "pc-app/web-gateway",
 ]
 # web-gateway needs TLS (getUserMedia requires a secure context), which pulls
@@ -13,6 +14,7 @@ members = [
 default-members = [
     "protocol",
     "pc-app/core",
+    "pc-app/ipc",
 ]
 
 [workspace.package]

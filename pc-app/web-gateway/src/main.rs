@@ -30,6 +30,23 @@ use ringbuf::{HeapCons, HeapProd, HeapRb};
 use phonemic_core::jitter_buffer::{JitterBuffer, Pop};
 use phonemic_protocol::{decode, pcm16_sample_count, Codec};
 
+mod driver_feed;
+
+/// Where decoded PCM goes: the speaker ring (dev) or the driver's shared ring.
+trait PcmSink: Send {
+    fn push_samples(&mut self, samples: &[i16]);
+}
+impl PcmSink for HeapProd<i16> {
+    fn push_samples(&mut self, samples: &[i16]) {
+        self.push_slice(samples);
+    }
+}
+impl PcmSink for driver_feed::DriverFeed {
+    fn push_samples(&mut self, samples: &[i16]) {
+        self.feed(samples);
+    }
+}
+
 const SAMPLE_RATE: u32 = 48_000;
 const FRAME_SAMPLES: usize = 480; // 10 ms @ 48 kHz
 /// Jitter-buffer sizing: hold ~30 ms (3 frames) to absorb network jitter,
@@ -55,15 +72,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(8443);
     let web_dir = args.next().unwrap_or_else(|| "web-client".to_string());
 
-    // Audio output on its own thread (cpal Stream is !Send on Windows).
-    let producer = spawn_audio_output()?;
+    // Choose where audio goes: the PhoneMic driver's shared ring (--driver) or
+    // the local speakers (default, dev mode).
+    let driver_mode = std::env::args().any(|a| a == "--driver");
+    let sink: Box<dyn PcmSink> = if driver_mode {
+        println!("  audio → shared ring for the PhoneMic driver (Global\\PhonemicRing)");
+        Box::new(driver_feed::DriverFeed::create()?)
+    } else {
+        println!("  audio → default output @ {SAMPLE_RATE} Hz");
+        // cpal Stream is !Send on Windows, so it lives on its own thread; we only
+        // move the ring producer here.
+        Box::new(spawn_audio_output()?)
+    };
 
     // Playout pipeline: the WS handler inserts packets into the jitter buffer by
     // sequence number; this timer drains one frame every 10 ms, concealing gaps
-    // with silence, and feeds the audio ring. This is where reorder tolerance
+    // with silence, and feeds the chosen sink. This is where reorder tolerance
     // and loss concealment actually happen.
     let jitter = Arc::new(Mutex::new(JitterBuffer::new(JB_CAPACITY, JB_TARGET_DEPTH)));
-    spawn_playout(jitter.clone(), producer);
+    spawn_playout(jitter.clone(), sink);
     let state = AppState { jitter };
 
     // Self-signed cert covering localhost plus whatever host the user browses.
@@ -84,7 +111,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PhoneMic web gateway");
     println!("  serving {web_dir}/ + wss on https://{addr}");
     println!("  open  https://<this-pc-lan-ip>:{port}/  on your phone (accept the cert warning)");
-    println!("  audio → default output @ {SAMPLE_RATE} Hz");
 
     axum_server::bind_rustls(addr, tls)
         .serve(app.into_make_service())
@@ -122,10 +148,9 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     println!("browser disconnected ({received} frames)");
 }
 
-/// Drain the jitter buffer at the frame cadence and feed the audio ring.
-fn spawn_playout(jitter: Arc<Mutex<JitterBuffer>>, producer: HeapProd<i16>) {
+/// Drain the jitter buffer at the frame cadence and feed the chosen sink.
+fn spawn_playout(jitter: Arc<Mutex<JitterBuffer>>, mut sink: Box<dyn PcmSink>) {
     tokio::spawn(async move {
-        let mut producer = producer;
         let silence = [0i16; FRAME_SAMPLES];
         let mut tick = tokio::time::interval(Duration::from_millis(10));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -139,12 +164,12 @@ fn spawn_playout(jitter: Arc<Mutex<JitterBuffer>>, producer: HeapProd<i16>) {
                     for pair in bytes.chunks_exact(2) {
                         samples.push(i16::from_le_bytes([pair[0], pair[1]]));
                     }
-                    producer.push_slice(&samples);
+                    sink.push_samples(&samples);
                 }
                 // Lost packet → emit a frame of silence so the timeline holds.
                 // (Opus PLC replaces this once Opus decoding lands.)
                 Pop::Conceal => {
-                    producer.push_slice(&silence);
+                    sink.push_samples(&silence);
                 }
                 // Still priming or underrun → device plays its own silence.
                 Pop::Empty => {}
