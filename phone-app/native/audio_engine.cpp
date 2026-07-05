@@ -8,6 +8,8 @@
 #include <chrono>
 #include <cstring>
 
+#include "wire.h"  // shared framing, cross-checked against the Rust decoder
+
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "phonemic", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "phonemic", __VA_ARGS__)
 
@@ -15,29 +17,10 @@ namespace phonemic {
 
 namespace {
 
-// --- Wire protocol (mirror of the /protocol Rust crate) ----------------------
-// TODO(phase1): replace this with the cbindgen-generated header so there is a
-// single source of truth. Kept minimal and in lockstep with docs/PROTOCOL.md.
-constexpr uint16_t kMagic = 0x4D50;  // "PM", little-endian
-constexpr uint8_t kVersion = 1;
-constexpr uint8_t kCodecPcm16 = 0;
-constexpr int kHeaderLen = 18;
-
 // Capture format. 48 kHz mono matches the PC receiver; 10 ms per Oboe callback
 // is a reasonable low-latency target (AAudio may hand us less).
 constexpr int32_t kSampleRate = 48000;
 constexpr int32_t kChannels = 1;
-
-void write_u16_le(uint8_t* p, uint16_t v) {
-    p[0] = static_cast<uint8_t>(v & 0xFF);
-    p[1] = static_cast<uint8_t>((v >> 8) & 0xFF);
-}
-void write_u32_le(uint8_t* p, uint32_t v) {
-    for (int i = 0; i < 4; ++i) p[i] = static_cast<uint8_t>((v >> (8 * i)) & 0xFF);
-}
-void write_u64_le(uint8_t* p, uint64_t v) {
-    for (int i = 0; i < 8; ++i) p[i] = static_cast<uint8_t>((v >> (8 * i)) & 0xFF);
-}
 
 uint64_t now_micros() {
     using namespace std::chrono;
@@ -125,22 +108,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
 
     // Chunk the callback into packets no bigger than kMaxPayloadBytes so the
     // header math and the send buffer stay bounded.
-    uint8_t buf[kHeaderLen + kMaxPayloadBytes];
+    uint8_t buf[PM_HEADER_LEN + kMaxPayloadBytes];
     int32_t offset_bytes = 0;
     while (offset_bytes < payload_bytes) {
         int32_t chunk = payload_bytes - offset_bytes;
         if (chunk > kMaxPayloadBytes) chunk = kMaxPayloadBytes;
 
-        write_u16_le(buf + 0, kMagic);
-        buf[2] = kVersion;
-        buf[3] = kCodecPcm16;
-        write_u32_le(buf + 4, seq_++);
-        write_u64_le(buf + 8, now_micros());
-        write_u16_le(buf + 16, static_cast<uint16_t>(chunk));
-        std::memcpy(buf + kHeaderLen,
-                    reinterpret_cast<const uint8_t*>(samples) + offset_bytes, chunk);
+        const uint8_t* src = reinterpret_cast<const uint8_t*>(samples) + offset_bytes;
+        int total = pm_encode(PM_CODEC_PCM16, seq_++, now_micros(), src,
+                              static_cast<uint16_t>(chunk), buf);
 
-        ::sendto(socket_fd_, buf, kHeaderLen + chunk, 0,
+        ::sendto(socket_fd_, buf, total, 0,
                  reinterpret_cast<sockaddr*>(&g_dest), sizeof(g_dest));
         packets_sent_.fetch_add(1, std::memory_order_relaxed);
         offset_bytes += chunk;
