@@ -10,6 +10,10 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Needed so the tag builds can upload binaries to the GitHub release.
+permissions:
+  contents: write
+
 jobs:
   test:
     name: tests (protocol, core, ipc)
