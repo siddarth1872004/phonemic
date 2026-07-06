@@ -30,6 +30,8 @@ use ringbuf::{HeapCons, HeapProd, HeapRb};
 use phonemic_core::jitter_buffer::{JitterBuffer, Pop};
 use phonemic_protocol::{decode, pcm16_sample_count, Codec};
 
+// The ACX-driver shared-ring feed is Windows-only (the kernel driver is too).
+#[cfg(windows)]
 mod driver_feed;
 
 /// Where decoded PCM goes: the speaker ring (dev) or the driver's shared ring.
@@ -41,6 +43,7 @@ impl PcmSink for HeapProd<i16> {
         self.push_slice(samples);
     }
 }
+#[cfg(windows)]
 impl PcmSink for driver_feed::DriverFeed {
     fn push_samples(&mut self, samples: &[i16]) {
         self.feed(samples);
@@ -72,9 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(8443);
     let web_dir = args.next().unwrap_or_else(|| "web-client".to_string());
 
-    // Choose where audio goes: the PhoneMic driver's shared ring (--driver) or
-    // the local speakers (default, dev mode).
+    // Choose where audio goes: the PhoneMic driver's shared ring (--driver,
+    // Windows-only) or the local speakers (default, dev mode).
     let driver_mode = std::env::args().any(|a| a == "--driver");
+    #[cfg(windows)]
     let sink: Box<dyn PcmSink> = if driver_mode {
         println!("  audio → shared ring for the PhoneMic driver (Global\\PhonemicRing)");
         Box::new(driver_feed::DriverFeed::create()?)
@@ -82,6 +86,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  audio → default output @ {SAMPLE_RATE} Hz");
         // cpal Stream is !Send on Windows, so it lives on its own thread; we only
         // move the ring producer here.
+        Box::new(spawn_audio_output()?)
+    };
+    #[cfg(not(windows))]
+    let sink: Box<dyn PcmSink> = {
+        if driver_mode {
+            eprintln!("--driver is Windows-only (the ACX driver); using speakers");
+        }
+        println!("  audio → default output @ {SAMPLE_RATE} Hz");
         Box::new(spawn_audio_output()?)
     };
 

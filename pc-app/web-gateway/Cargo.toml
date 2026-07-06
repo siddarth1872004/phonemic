@@ -20,14 +20,6 @@ phonemic-core = { path = "../core" }
 # Shared-ring producer for the --driver path (writes PCM the driver consumes).
 phonemic-ipc = { path = "../ipc" }
 
-# Only needed for the --driver path: create + map the shared section.
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = [
-    "Win32_Foundation",
-    "Win32_System_Memory",
-    "Win32_Security",
-] }
-
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 axum = { version = "0.7", features = ["ws"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
@@ -41,3 +33,13 @@ rcgen = "0.13"
 # Stream (which is !Send on Windows) stays on its own thread.
 cpal = "0.15"
 ringbuf = "0.4"
+
+# Only needed for the --driver path (Windows-only: maps the shared section the
+# ACX driver consumes). NOTE: keep this target section LAST — every dependency
+# below a [target...] header belongs to it.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_Security",
+] }
