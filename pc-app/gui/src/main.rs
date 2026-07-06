@@ -1,9 +1,15 @@
-//! PhoneMic — native Windows GUI.
+//! PhoneMic — native desktop GUI (Windows + Linux).
 //!
 //! A real OS window (via `eframe`/egui, no web/webview) that runs the UDP
 //! receiver and audio output in a background thread and shows the user what they
 //! need: the IP to type on the phone, live connection status, a mic-level meter,
-//! and where the audio is being routed (VB-CABLE vs. speakers).
+//! and where the audio is being routed.
+//!
+//! Virtual-microphone story per platform:
+//! - **Windows**: VB-CABLE (kernel driver, installed via the in-app button);
+//!   we play into "CABLE Input", apps record "CABLE Output".
+//! - **Linux**: no driver needed — a PulseAudio/PipeWire null sink + remapped
+//!   source created with `pactl` at startup; apps record "PhoneMic Microphone".
 
 // No console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -83,8 +89,15 @@ fn spawn_receiver(shared: Arc<Shared>) {
                 return;
             }
         };
-        // Prefer VB-CABLE so the phone becomes a real mic; else speakers.
-        let mut sink = match AudioSink::new(Some("cable")) {
+        // Windows: prefer VB-CABLE by device name. Linux: create the pactl
+        // null-sink/source and route via PULSE_SINK (must happen before the
+        // audio stream opens), then use the default device.
+        #[cfg(windows)]
+        let (prefer, virtual_ready) = (Some("cable"), false);
+        #[cfg(not(windows))]
+        let (prefer, virtual_ready) = (None, ensure_linux_virtual_mic());
+
+        let mut sink = match AudioSink::new(prefer) {
             Ok(s) => s,
             Err(e) => {
                 *shared.error.lock().unwrap() = Some(format!("No audio output: {e}"));
@@ -92,7 +105,9 @@ fn spawn_receiver(shared: Arc<Shared>) {
             }
         };
         *shared.device.lock().unwrap() = sink.device_name.clone();
-        shared.is_cable.store(sink.is_virtual_cable, Ordering::Relaxed);
+        shared
+            .is_cable
+            .store(sink.is_virtual_cable || virtual_ready, Ordering::Relaxed);
 
         let mut denoiser = Denoiser::new();
         let mut denoised: Vec<i16> = Vec::with_capacity(1024);
@@ -115,7 +130,7 @@ fn spawn_receiver(shared: Arc<Shared>) {
 
             // Decrypt if the sender marked the payload encrypted.
             let pcm_bytes: Vec<u8> = if header.encrypted {
-                let mut drop_it = || {
+                let drop_it = || {
                     shared.dropped_encrypted.fetch_add(1, Ordering::Relaxed);
                     shared.last_drop_ms.store(now_ms(), Ordering::Relaxed);
                     *shared.peer.lock().unwrap() = peer.ip().to_string();
@@ -187,6 +202,8 @@ struct App {
     ip: String,
     pin: String,
     level: f32, // smoothed meter value
+    // Only driven by the VB-CABLE installer flow, which is Windows-only.
+    #[cfg_attr(not(windows), allow(dead_code))]
     setup_status: Arc<Mutex<Option<String>>>,
 }
 
@@ -204,11 +221,60 @@ impl App {
     }
 }
 
-/// Download VB-CABLE and launch its (elevated) installer, so the whole
+/// What the user should pick as the microphone in Discord/Zoom/OBS.
+#[cfg(windows)]
+const MIC_DEVICE_NAME: &str = "CABLE Output (VB-Audio Virtual Cable)";
+#[cfg(not(windows))]
+const MIC_DEVICE_NAME: &str = "PhoneMic Microphone";
+
+/// Linux: create the virtual microphone with PulseAudio/PipeWire — a null sink
+/// we play into, whose monitor is remapped into a named source so voice apps
+/// list it as a microphone. No driver, no reboot; `pactl` works on both
+/// PulseAudio and PipeWire (pipewire-pulse) systems. Idempotent. Returns true
+/// when the sink is available, and routes our playback into it via PULSE_SINK
+/// (which the ALSA→Pulse plugin honours; must be set before cpal opens).
+#[cfg(not(windows))]
+fn ensure_linux_virtual_mic() -> bool {
+    use std::process::Command;
+    let exists = Command::new("pactl")
+        .args(["list", "short", "sinks"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("PhoneMic"))
+        .unwrap_or(false);
+    if !exists {
+        let ok = Command::new("pactl")
+            .args([
+                "load-module",
+                "module-null-sink",
+                "sink_name=PhoneMic",
+                "sink_properties=device.description=PhoneMic",
+            ])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !ok {
+            return false; // no pulse/pipewire — fall back to plain speakers
+        }
+        let _ = Command::new("pactl")
+            .args([
+                "load-module",
+                "module-remap-source",
+                "master=PhoneMic.monitor",
+                "source_name=PhoneMicMic",
+                "source_properties=device.description=PhoneMicMicrophone",
+            ])
+            .status();
+    }
+    std::env::set_var("PULSE_SINK", "PhoneMic");
+    true
+}
+
+/// Windows: download VB-CABLE and launch its (elevated) installer, so the whole
 /// "make my phone a real mic" setup happens from inside the app. VB-CABLE's
 /// installer still requires one click ("Install Driver") and a reboot — that
 /// part can't be silenced — but everything up to it is automated. Uses
 /// PowerShell so we add no HTTP/zip/elevation dependencies (minimal bloat).
+#[cfg(windows)]
 fn install_vbcable(status: Arc<Mutex<Option<String>>>) {
     *status.lock().unwrap() = Some("Downloading VB-CABLE…".to_string());
     std::thread::spawn(move || {
@@ -393,7 +459,7 @@ impl eframe::App for App {
                             ui.label(egui::RichText::new("Microphone mode").color(TEXT).strong());
                         });
                         ui.label(egui::RichText::new(format!("routing to {device}")).size(12.0).color(MUTED));
-                        ui.label(egui::RichText::new("In Discord / Zoom, choose mic: “CABLE Output”").size(12.0).color(TEXT));
+                        ui.label(egui::RichText::new(format!("In Discord / Zoom, choose mic: “{MIC_DEVICE_NAME}”")).size(12.0).color(TEXT));
                     } else {
                         ui.label(egui::RichText::new("No virtual microphone yet").color(TEXT).strong());
                         ui.label(egui::RichText::new("Audio is muted by default so you don't hear yourself.").size(12.0).color(MUTED));
@@ -407,23 +473,31 @@ impl eframe::App for App {
                             self.shared.monitor.store(mon, Ordering::Relaxed);
                         }
                         ui.add_space(6.0);
-                        ui.label(egui::RichText::new("To use your phone as a mic in Discord/Zoom, set up the virtual microphone:").size(12.0).color(MUTED));
-                        ui.add_space(8.0);
-                        let status = self.setup_status.lock().unwrap().clone();
-                        let busy = status.as_deref() == Some("Downloading VB-CABLE…");
-                        if ui
-                            .add_enabled(
-                                !busy,
-                                egui::Button::new(egui::RichText::new("⚙  Set up microphone").strong().color(TEXT))
-                                    .fill(ACCENT),
-                            )
-                            .clicked()
+                        #[cfg(windows)]
                         {
-                            install_vbcable(self.setup_status.clone());
+                            ui.label(egui::RichText::new("To use your phone as a mic in Discord/Zoom, set up the virtual microphone:").size(12.0).color(MUTED));
+                            ui.add_space(8.0);
+                            let status = self.setup_status.lock().unwrap().clone();
+                            let busy = status.as_deref() == Some("Downloading VB-CABLE…");
+                            if ui
+                                .add_enabled(
+                                    !busy,
+                                    egui::Button::new(egui::RichText::new("⚙  Set up microphone").strong().color(TEXT))
+                                        .fill(ACCENT),
+                                )
+                                .clicked()
+                            {
+                                install_vbcable(self.setup_status.clone());
+                            }
+                            if let Some(msg) = status {
+                                ui.add_space(6.0);
+                                ui.label(egui::RichText::new(msg).size(12.0).color(if busy { MUTED } else { GREEN }));
+                            }
                         }
-                        if let Some(msg) = status {
-                            ui.add_space(6.0);
-                            ui.label(egui::RichText::new(msg).size(12.0).color(if busy { MUTED } else { GREEN }));
+                        #[cfg(not(windows))]
+                        {
+                            // pactl setup failed at startup → no PulseAudio/PipeWire.
+                            ui.label(egui::RichText::new("PulseAudio/PipeWire wasn't found, so the virtual microphone couldn't be created. Install `pactl` (package: pulseaudio-utils) and restart PhoneMic.").size(12.0).color(MUTED));
                         }
                     }
                 });

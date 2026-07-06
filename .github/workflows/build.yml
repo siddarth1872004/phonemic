@@ -1,0 +1,57 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: tests (protocol, core, ipc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cargo test --workspace --features "phonemic-core/denoise phonemic-core/crypto"
+
+  windows:
+    name: windows exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p phonemic-gui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-windows
+          path: target/release/PhoneMic.exe
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" target/release/PhoneMic.exe --clobber
+
+  linux:
+    name: linux binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - run: cargo build --release -p phonemic-gui
+      - run: mv target/release/PhoneMic target/release/PhoneMic-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-linux
+          path: target/release/PhoneMic-linux
+      - name: attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.ref_name }}" target/release/PhoneMic-linux --clobber
