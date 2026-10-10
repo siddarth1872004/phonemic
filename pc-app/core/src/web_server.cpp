@@ -368,7 +368,10 @@ bool WebServer::start(uint16_t port, const std::string& token, std::string* err)
     int rc;
     {
         std::lock_guard<std::mutex> lk(g_tls);
-        rc = mbedtls_net_bind(&listen, nullptr, port_s.c_str(), MBEDTLS_NET_PROTO_TCP);
+        // Bind IPv4 explicitly. With a NULL address mbedTLS binds the first
+        // getaddrinfo() result, which on Windows is IPv6 "::" — and Windows
+        // IPv6 sockets are IPv6-only, so IPv4 phones could not connect.
+        rc = mbedtls_net_bind(&listen, "0.0.0.0", port_s.c_str(), MBEDTLS_NET_PROTO_TCP);
     }
     if (rc != 0) {
         if (err) *err = "can't listen on TCP port " + port_s + " (" + mbed_err(rc) + ")";
