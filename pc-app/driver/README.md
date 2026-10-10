@@ -12,13 +12,29 @@ phone ─► PhoneMic app (jitter buffer, Voice Focus, effects)
        ─► this driver's RT capture packets ─► Windows audio stack ─► Discord/Zoom
 ```
 
-## Status: experimental, not yet compiled
+## Status: experimental. Builds in CI, never loaded
 
-The project's CI has no Windows Driver Kit, so this code has **never been
-built or loaded**. It follows the ACX RT-stream model (circuit + streaming pin +
-microphone bridge pin, `AllocateRtPackets`, `GetCapturePacket`,
-`AcxRtStreamNotifyPacketComplete`), but expect to adjust details against your
-WDK's `acx.h`. Treat it as a careful starting point, not a shipping driver.
+CI (job *Windows driver (WDK, experimental)*) compiles and links `phonemic.sys`
+with warnings as errors, against the WDK 10.0.26100 headers (ACX 1.0, KMDF 1.33),
+and uploads it unsigned as the `PhoneMic-driver-unsigned` artifact. It has
+**never been loaded or run** on a real Windows machine. It follows the ACX
+RT-stream model (circuit + streaming pin + microphone bridge pin,
+`AllocateRtPackets`, `GetCapturePacket`, `AcxRtStreamNotifyPacketComplete`).
+Treat it as a careful starting point, not a shipping driver.
+
+### Building without the WDK installer
+
+GitHub's `windows-2022` image has a WDK without ACX. CI fills the gap from the
+`Microsoft.Windows.WDK.x64` NuGet package; you can do the same:
+
+```powershell
+nuget install Microsoft.Windows.WDK.x64 -Version 10.0.26100.6584 -OutputDirectory $env:TEMP\nuget
+msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off `
+  /p:PhonemicSkipInf=true "/p:PhonemicAcxRoot=$env:TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
+```
+
+`PhonemicSkipInf=true` skips INF validation and packaging (the runner image's
+InfVerif is broken); drop it for an installable package.
 
 Safety properties the code is designed around (and that a reviewer should check):
 

@@ -88,8 +88,8 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
 | [`pc-app/core/`](pc-app/core/) | Desktop engine: receiver pipeline, jitter buffer, adaptive playout, RNNoise, voice FX, audio devices, virtual mic, browser-mic server. |
 | [`pc-app/gui/`](pc-app/gui/) | **The desktop app**: Dear ImGui + GLFW, one small native binary. |
 | [`pc-app/tools/`](pc-app/tools/) | `phonemic-receiver` (headless) and `phonemic-softphone` (phone emulator for testing). |
-| [`pc-app/tests/`](pc-app/tests/) | 92 unit and integration tests (protocol fuzzing, crypto known-answer vectors, drift simulation, end-to-end UDP and TLS). |
-| [`pc-app/ipc/`](pc-app/ipc/) + [`pc-app/driver/`](pc-app/driver/) | Experimental ACX virtual-mic driver to replace VB-CABLE (needs the WDK). |
+| [`pc-app/tests/`](pc-app/tests/) | 100 unit and integration tests (protocol fuzzing, crypto known-answer vectors, drift simulation, end-to-end UDP, TLS and USB, Opus FEC). |
+| [`pc-app/ipc/`](pc-app/ipc/) + [`pc-app/driver/`](pc-app/driver/) | Experimental ACX virtual-mic driver to replace VB-CABLE (builds in CI; unsigned, not yet tested on hardware). |
 | [`phone-app/`](phone-app/) | **The Android app**: Kotlin UI + C++/Oboe engine. |
 | [`web-client/`](web-client/) | The browser mic page (embedded into the desktop app at build time). |
 | [`docs/`](docs/) | Protocol, architecture, building, testing, and the [v0.2 → v0.3 audit](docs/AUDIT.md). |
@@ -120,8 +120,8 @@ The browser client was also checked against the real server in headless Chromium
 - [x] Opus codec (48 kbps, FEC + concealment)
 - [x] USB cable mode (`adb reverse`, set up automatically)
 - [ ] Bluetooth transport
-- [ ] Native ACX virtual-mic driver (code written, needs WDK build + signing)
+- [ ] Native ACX virtual-mic driver (builds in CI; needs testing on Windows 11 + signing)
 
 ## 📄 License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE). Third-party components are fetched at build time under their own licenses: monocypher (BSD-2/CC0), RNNoise (BSD-3), miniaudio (MIT-0/public domain), Dear ImGui (MIT), GLFW (zlib), Mbed TLS (Apache-2.0), QR Code generator (MIT).
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE). Third-party components are fetched at build time under their own licenses: monocypher (BSD-2/CC0), RNNoise (BSD-3), miniaudio (MIT-0/public domain), Dear ImGui (MIT), GLFW (zlib), Mbed TLS (Apache-2.0), QR Code generator (MIT), Opus (BSD-3).

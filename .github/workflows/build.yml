@@ -100,8 +100,7 @@ jobs:
   driver:
     name: Windows driver (WDK, experimental)
     runs-on: windows-2022
-    # Experimental until it builds cleanly; it can't block the rest of CI.
-    continue-on-error: true
+    # Compile + link check only (unsigned, never loaded). Releases don't wait on it.
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2

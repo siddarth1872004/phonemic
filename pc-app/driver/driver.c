@@ -1,7 +1,7 @@
 /*++
 PhoneMic virtual audio capture driver (WDF + ACX).
 
-See driver.h for STATUS (experimental, not yet compiled). Flow:
+See driver.h for STATUS (experimental: builds in CI, never loaded). Flow:
 
     DriverEntry ─ AcxDriverInitialize
       └─ PhonemicEvtDeviceAdd ─ AcxDeviceInitInitialize / AcxDeviceInitialize
