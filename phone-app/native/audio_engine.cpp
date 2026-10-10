@@ -15,6 +15,8 @@
 #include <phonemic/crypto.h>  // shared with the PC: XChaCha20-Poly1305 + Argon2id
 #include <phonemic/wire.h>    // shared with the PC: the one packet format
 
+#include <opus.h>
+
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "phonemic", __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, "phonemic", __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "phonemic", __VA_ARGS__)
@@ -59,7 +61,8 @@ int64_t AudioEngine::pc_age_ms() const {
     return static_cast<int64_t>(now_us() / 1000) - last;
 }
 
-int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus) {
+int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus,
+                       bool opus) {
     stop();  // clean state
 
     std::memset(&dest_, 0, sizeof dest_);
@@ -97,6 +100,7 @@ int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::st
     }
 
     voice_focus_ = voice_focus;
+    want_opus_ = opus;
     ring_write_.store(0);
     ring_read_.store(0);
     packets_sent_.store(0);
@@ -111,6 +115,24 @@ int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::st
         socket_fd_ = -1;
         return kAudioError;
     }
+    // Opus runs at 48 kHz (Oboe resamples to that); fall back to PCM otherwise.
+    if (want_opus_ && sample_rate_.load() == PM_SAMPLE_RATE) {
+        int err = 0;
+        opus_ = opus_encoder_create(PM_SAMPLE_RATE, 1, OPUS_APPLICATION_VOIP, &err);
+        if (err == OPUS_OK && opus_) {
+            opus_encoder_ctl(opus_, OPUS_SET_BITRATE(48000));
+            opus_encoder_ctl(opus_, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
+            opus_encoder_ctl(opus_, OPUS_SET_COMPLEXITY(5));        // light on phone CPUs
+            opus_encoder_ctl(opus_, OPUS_SET_INBAND_FEC(1));       // lets the PC rebuild lost frames
+            opus_encoder_ctl(opus_, OPUS_SET_PACKET_LOSS_PERC(5));
+            opus_encoder_ctl(opus_, OPUS_SET_VBR_CONSTRAINT(1));
+            encoded_.resize(1500);
+        } else {
+            LOGW("opus encoder init failed (%d); sending PCM", err);
+            opus_ = nullptr;
+        }
+    }
+    opus_active_.store(opus_ != nullptr);
     start_us_ = now_us();
     running_.store(true);
     sender_ = std::thread([this] { sender_loop(); });
@@ -176,6 +198,11 @@ void AudioEngine::stop() {
         ::close(socket_fd_);
         socket_fd_ = -1;
     }
+    if (opus_) {
+        opus_encoder_destroy(opus_);
+        opus_ = nullptr;
+    }
+    opus_active_.store(false);
     crypto_wipe(key_, sizeof key_);
     input_level_.store(0.0f);
     audio_session_.store(-1);
@@ -250,7 +277,12 @@ void AudioEngine::sender_loop() {
 
 void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
     pm_audio_header h{};
-    h.codec = PM_CODEC_PCM16;
+    // Opus only takes 48 kHz 10 ms frames. If the stream was reopened at another
+    // rate mid-session, drop frames rather than switch codec (the PC would treat
+    // a codec switch as a brand-new session).
+    const bool opus = opus_ != nullptr && n == static_cast<size_t>(PM_SAMPLE_RATE / 100);
+    if (opus_ != nullptr && !opus) return;  // rate changed under Opus: drop until it recovers
+    h.codec = opus ? PM_CODEC_OPUS : PM_CODEC_PCM16;
     h.session_id = session_;
     h.seq = seq_++;
     // A media clock (like RTP): capture start + samples so far. The PC's jitter
@@ -259,17 +291,25 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
     h.sample_rate = static_cast<uint32_t>(sample_rate_.load());
     samples_sent_ += n;
 
-    const size_t bytes = n * sizeof(int16_t);  // little-endian on all Android ABIs
+    const uint8_t* body = reinterpret_cast<const uint8_t*>(pcm);
+    size_t bytes = n * sizeof(int16_t);  // little-endian on all Android ABIs
+    if (opus) {
+        const int len = opus_encode(opus_, pcm, static_cast<int>(n), encoded_.data(),
+                                    static_cast<opus_int32>(encoded_.size()));
+        if (len <= 0) return;
+        body = encoded_.data();
+        bytes = static_cast<size_t>(len);
+    }
     size_t total;
     if (encrypt_) {
         h.flags = PM_FLAG_ENCRYPTED;
         h.payload_len = static_cast<uint16_t>(bytes + PM_TAG_LEN);
         pm_write_audio_header(packet_.data(), &h);  // header first: it is the AAD
-        pm_seal(key_, packet_.data(), PM_AUDIO_HEADER_LEN, session_, h.seq, h.timestamp_us,
-                reinterpret_cast<const uint8_t*>(pcm), bytes, packet_.data() + PM_AUDIO_HEADER_LEN);
+        pm_seal(key_, packet_.data(), PM_AUDIO_HEADER_LEN, session_, h.seq, h.timestamp_us, body, bytes,
+                packet_.data() + PM_AUDIO_HEADER_LEN);
         total = PM_AUDIO_HEADER_LEN + h.payload_len;
     } else {
-        const int r = pm_encode_audio(packet_.data(), packet_.size(), &h, reinterpret_cast<const uint8_t*>(pcm), bytes);
+        const int r = pm_encode_audio(packet_.data(), packet_.size(), &h, body, bytes);
         if (r < 0) return;
         total = static_cast<size_t>(r);
     }

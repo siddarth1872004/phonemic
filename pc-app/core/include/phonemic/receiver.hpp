@@ -30,6 +30,7 @@
 #include "phonemic/dsp.hpp"
 #include "phonemic/jitter_buffer.hpp"
 #include "phonemic/net.hpp"
+#include "phonemic/opus_codec.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/voice_fx.hpp"
 
@@ -112,6 +113,8 @@ public:
         bool encrypted = false;
         uint8_t sender_version = 0;  // 1 = legacy app
         uint32_t sample_rate = 0;
+        bool opus = false;           // the sender compresses with Opus
+        uint64_t fec_recovered = 0;  // lost frames rebuilt from Opus FEC
         uint64_t datagrams = 0, packets = 0, lost = 0, malformed = 0;
         uint64_t rejected = 0;
         uint8_t last_reject = PM_STATUS_OK;
@@ -169,6 +172,8 @@ private:
     uint32_t active_rate_ = PM_SAMPLE_RATE;
     bool active_encrypted_ = false;
     uint8_t active_version_ = 0;
+    uint8_t active_codec_ = PM_CODEC_PCM16;
+    OpusVoiceDecoder opus_;
     JitterBuffer jitter_{64, 0};
     Resampler resampler_;
     Concealer concealer_;
@@ -196,7 +201,8 @@ private:
     std::atomic<uint8_t> last_reject_{PM_STATUS_OK};
     std::atomic<bool> legacy_encrypted_{false};
     std::atomic<float> peak_{0.0f}, vad_{0.0f};
-    std::atomic<uint32_t> session_received_{0}, session_lost_{0};
+    std::atomic<uint32_t> session_received_{0}, session_lost_{0}, session_fec_{0};
+    std::atomic<uint64_t> fec_recovered_{0};
     std::string last_reject_peer_;  // under pipe_mu_
 };
 

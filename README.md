@@ -24,6 +24,7 @@ No extra hardware, no subscription, no Electron. Native code end to end: a C++ d
 |---|---|
 | 🔎 **Zero typing** | The phone app finds your PC on the Wi-Fi by itself ("Find my PC"). |
 | 🌐 **No app needed** | Or scan the QR code in the PC window: the phone's **browser** becomes the mic (Android and iPhone). |
+| 📦 **Opus compression** | ~48 kbps instead of 768 kbps raw PCM, with forward error correction that rebuilds lost packets. On by default; one switch in the app. |
 | 🚀 **Low latency** | 10 ms UDP frames, a lock-free audio path, a Wi-Fi low-latency lock on the phone, and a selectable buffer (20–150 ms). |
 | 🎚️ **Glitch-free over time** | Adaptive playout absorbs phone/PC clock drift (no creeping delay, no periodic clicks). The jitter buffer handles reordering and loss concealment. |
 | 🧹 **Voice Focus** | The phone's noise suppressor and echo canceller, then RNNoise on the PC. Removes fans, keyboards and room hiss. |
@@ -67,7 +68,7 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
  📱 Android (C++ / Oboe)                          🖥️ PhoneMic desktop app (C++)
  ┌──────────────────────────────┐   Wi-Fi UDP   ┌───────────────────────────────────────────┐
  │ mic → lock-free ring          │ ────────────► │ decode (shared wire.h) → auth / decrypt   │
- │ sender thread: 10 ms frames,  │  10 ms frames │ → jitter buffer → resample → conceal loss │
+ │ sender thread: 10 ms frames,  │  10 ms frames │ → jitter buffer → Opus/PCM → FEC, PLC     │
  │ wire.h framing, XChaCha20 opt │ ◄──────────── │ → RNNoise → voice FX → gain/limiter       │
  └──────────────────────────────┘  STATUS 2 Hz  │ → adaptive playout (drift) → virtual mic  │
  🌐 any browser ── HTTPS/WebSocket (pairing code) ─►  same pipeline                         │
@@ -115,7 +116,7 @@ The browser client was also checked against the real server in headless Chromium
 - [x] LAN auto-discovery and PC → phone status feedback
 - [x] Browser mic built into the app (QR code + pairing code)
 - [x] Windows, Linux, macOS (experimental) desktop builds; Android in CI
-- [ ] Opus codec (lower bandwidth, better concealment)
+- [x] Opus codec (48 kbps, FEC + concealment)
 - [ ] USB (`adb reverse`) and Bluetooth transports
 - [ ] Native ACX virtual-mic driver (code written, needs WDK build + signing)
 

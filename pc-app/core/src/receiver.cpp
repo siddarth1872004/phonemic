@@ -191,13 +191,17 @@ void Receiver::begin_session(const SourceId& src, const pm_audio_header& h, uint
     have_active_ = true;
     active_ = src;
     active_last_ms_ = now;
-    active_rate_ = h.sample_rate;
+    active_codec_ = h.codec;
+    // Opus always decodes at 48 kHz, whatever rate the sender captured at.
+    active_rate_ = h.codec == PM_CODEC_OPUS ? PM_SAMPLE_RATE : h.sample_rate;
     active_encrypted_ = (h.flags & PM_FLAG_ENCRYPTED) != 0;
     active_version_ = h.version;
     jitter_.reset();
-    resampler_.set_rates(h.sample_rate, PM_SAMPLE_RATE);
+    resampler_.set_rates(active_rate_, PM_SAMPLE_RATE);
     resampler_.reset();
     concealer_.reset();
+    opus_.reset();
+    session_fec_.store(0);
     denoiser_.reset();
     jit_have_ = false;
     jitter_us_ = 0;
@@ -210,7 +214,7 @@ void Receiver::begin_session(const SourceId& src, const pm_audio_header& h, uint
     if (log_) {
         std::string m = (src.web ? "Browser mic connected: " : "Phone connected: ") + src.ep.ip_string();
         m += active_encrypted_ ? " (encrypted" : (src.web ? " (TLS" : " (unencrypted");
-        m += ", " + std::to_string(h.sample_rate) + " Hz)";
+        m += h.codec == PM_CODEC_OPUS ? ", Opus)" : ", " + std::to_string(h.sample_rate) + " Hz PCM)";
         if (h.version == PM_VERSION_LEGACY) m += " — old phone app, please update";
         log_->add(m);
     }
@@ -232,7 +236,7 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
         reject(src, PM_STATUS_BUSY, now);
         return PM_STATUS_BUSY;
     }
-    if (h.codec != PM_CODEC_PCM16) {
+    if (h.codec != PM_CODEC_PCM16 && h.codec != PM_CODEC_OPUS) {
         reject(src, PM_STATUS_UNSUPPORTED, now);
         return PM_STATUS_UNSUPPORTED;
     }
@@ -272,14 +276,15 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
         reject(src, PM_STATUS_PIN_REQUIRED, now);
         return PM_STATUS_PIN_REQUIRED;
     }
-    if (pcm_len == 0 || pcm_len % 2 != 0) {
+    if (pcm_len == 0 || (h.codec == PM_CODEC_PCM16 && pcm_len % 2 != 0)) {
         malformed_.fetch_add(1, std::memory_order_relaxed);
         return PM_STATUS_UNSUPPORTED;
     }
 
-    if (!is_active) begin_session(src, h, now);
+    // A codec switch mid-stream can only mean the sender restarted: start over.
+    if (!is_active || h.codec != active_codec_) begin_session(src, h, now);
     active_last_ms_ = now;
-    if (h.sample_rate != active_rate_) {
+    if (h.codec == PM_CODEC_PCM16 && h.sample_rate != active_rate_) {
         active_rate_ = h.sample_rate;
         resampler_.set_rates(h.sample_rate, PM_SAMPLE_RATE);
     }
@@ -324,6 +329,16 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
             conceal_frame();
             continue;
         }
+        if (active_codec_ == PM_CODEC_OPUS) {
+            if (!opus_.decode(p.payload.data(), p.payload.size(), scratch_rs_) || scratch_rs_.empty()) {
+                malformed_.fetch_add(1, std::memory_order_relaxed);
+                conceal_frame();  // a corrupt packet is just another lost frame
+                continue;
+            }
+            last_frame_len_ = scratch_rs_.size();
+            play_frame(scratch_rs_.data(), scratch_rs_.size());
+            continue;
+        }
         const size_t n = p.payload.size() / 2;
         scratch_in_.resize(n);
         pcm16le_to_float(p.payload.data(), n, scratch_in_.data());
@@ -340,6 +355,17 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
 }
 
 void Receiver::conceal_frame() {
+    if (active_codec_ == PM_CODEC_OPUS) {
+        // Rebuild the lost frame from the next packet's in-band FEC when it has
+        // arrived (it has whenever loss was declared after a reorder wait).
+        const auto* next = jitter_.peek_next();
+        if (opus_.conceal(next ? next->data() : nullptr, next ? next->size() : 0, last_frame_len_, scratch_rs_)) {
+            fec_recovered_.fetch_add(1, std::memory_order_relaxed);
+            session_fec_.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (!scratch_rs_.empty()) play_frame(scratch_rs_.data(), scratch_rs_.size());
+        return;
+    }
     scratch_rs_.resize(last_frame_len_);
     concealer_.conceal(scratch_rs_.data(), scratch_rs_.size());
     play_frame(scratch_rs_.data(), scratch_rs_.size());
@@ -439,6 +465,7 @@ Receiver::Snapshot Receiver::snapshot() const {
     s.last_datagram_ms = last_datagram_ms_.load();
     s.last_packet_ms = last_packet_ms_.load();
     s.legacy_encrypted_seen = legacy_encrypted_.load();
+    s.fec_recovered = fec_recovered_.load();
     s.peak = peak_.load();
     s.voice_prob = vad_.load();
     std::lock_guard<std::mutex> lk(pipe_mu_);
@@ -450,6 +477,7 @@ Receiver::Snapshot Receiver::snapshot() const {
         s.encrypted = active_encrypted_;
         s.sender_version = active_version_;
         s.sample_rate = active_rate_;
+        s.opus = active_codec_ == PM_CODEC_OPUS;
         s.jitter_ms = static_cast<float>(jitter_us_ / 1000.0);
     }
     s.mic_buffer_ms = mic_ ? mic_->buffered_ms() : 0;

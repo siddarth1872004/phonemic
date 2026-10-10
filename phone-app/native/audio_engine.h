@@ -19,6 +19,8 @@
 
 #include <oboe/Oboe.h>
 
+struct OpusEncoder;
+
 namespace phonemic {
 
 class AudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStreamErrorCallback {
@@ -32,7 +34,9 @@ public:
     // Open the mic and stream to pc_ip:pc_port. A non-empty `pin` encrypts
     // every packet. `voice_focus` picks the platform's voice-processing input
     // (noise suppression / echo cancellation) vs. a minimally processed one.
-    int start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus);
+    // `opus` compresses each 10 ms frame (~48 kbps instead of 768 kbps PCM).
+    int start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus,
+              bool opus);
     void stop();  // idempotent
     void set_muted(bool m) { muted_.store(m, std::memory_order_relaxed); }
 
@@ -43,6 +47,7 @@ public:
     int32_t audio_session_id() const { return audio_session_.load(std::memory_order_relaxed); }
     int32_t sample_rate() const { return sample_rate_.load(std::memory_order_relaxed); }
     int32_t stream_generation() const { return stream_gen_.load(std::memory_order_relaxed); }
+    bool using_opus() const { return opus_active_.load(std::memory_order_relaxed); }
     // Latest STATUS from the PC: state (PM_STATUS_*, -1 = none yet) and age.
     int32_t pc_state() const { return pc_state_.load(std::memory_order_relaxed); }
     int64_t pc_age_ms() const;
@@ -74,6 +79,10 @@ private:
     std::thread sender_;
     std::atomic<bool> running_{false}, need_reopen_{false}, muted_{false};
     bool voice_focus_ = true;
+    bool want_opus_ = false;
+    OpusEncoder* opus_ = nullptr;          // used only on the sender thread
+    std::atomic<bool> opus_active_{false};
+    std::vector<uint8_t> encoded_;
 
     int socket_fd_ = -1;
     sockaddr_in dest_{};

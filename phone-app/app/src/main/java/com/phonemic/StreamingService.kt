@@ -73,11 +73,12 @@ class StreamingService : Service() {
         val port = intent.getIntExtra(EXTRA_PORT, Discovery.DEFAULT_PORT)
         voiceFocus = intent.getBooleanExtra(EXTRA_VOICE_FOCUS, true)
         val pin = intent.getStringExtra(EXTRA_PIN) ?: ""
+        val opus = intent.getBooleanExtra(EXTRA_OPUS, true)
 
         // Must be foreground within a few seconds of startForegroundService().
         startInForeground(getString(R.string.status_connecting))
 
-        val rc = NativeBridge.start(ip, port, pin, voiceFocus)
+        val rc = NativeBridge.start(ip, port, pin, voiceFocus, opus)
         if (rc != NativeBridge.OK) {
             lastError = rc
             running = false
@@ -144,6 +145,7 @@ class StreamingService : Service() {
         const val EXTRA_PORT = "pc_port"
         const val EXTRA_VOICE_FOCUS = "voice_focus"
         const val EXTRA_PIN = "pin"
+        const val EXTRA_OPUS = "opus"
         const val ACTION_STOP = "com.phonemic.STOP"
         const val ACTION_TOGGLE_MUTE = "com.phonemic.TOGGLE_MUTE"
         private const val CHANNEL_ID = "phonemic_streaming"

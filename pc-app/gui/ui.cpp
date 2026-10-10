@@ -171,9 +171,11 @@ void connect_card(App& app, UiState& ui) {
     if (s.connected) {
         dot = kGreen;
         char buf[256];
-        std::snprintf(buf, sizeof buf, "Connected — %s  ·  %s  ·  %.1f kHz", s.peer.c_str(),
-                      s.peer_is_web ? "browser (TLS)" : (s.encrypted ? "encrypted" : "not encrypted"),
-                      s.sample_rate / 1000.0);
+        char codec[32];
+        if (s.opus) std::snprintf(codec, sizeof codec, "Opus");
+        else std::snprintf(codec, sizeof codec, "%.1f kHz PCM", s.sample_rate / 1000.0);
+        std::snprintf(buf, sizeof buf, "Connected — %s  ·  %s  ·  %s", s.peer.c_str(),
+                      s.peer_is_web ? "browser (TLS)" : (s.encrypted ? "encrypted" : "not encrypted"), codec);
         text = buf;
         if (s.sender_version == PM_VERSION_LEGACY) text += "  ·  old phone app — please update";
     } else if (recent_reject) {
@@ -256,7 +258,10 @@ void level_card(App& app, UiState& ui) {
     ImGui::PushFont(ui.fonts.small);
     if (s.connected) {
         const double loss = (s.packets + s.lost) ? 100.0 * static_cast<double>(s.lost) / static_cast<double>(s.packets + s.lost) : 0.0;
-        ImGui::TextColored(kMuted, "loss %.1f%%  ·  jitter %.1f ms  ·  buffer %.0f ms%s", loss, s.jitter_ms,
+        char fec[48] = "";
+        if (s.opus && s.fec_recovered)
+            std::snprintf(fec, sizeof fec, "  ·  %llu rebuilt by FEC", static_cast<unsigned long long>(s.fec_recovered));
+        ImGui::TextColored(kMuted, "loss %.1f%%%s  ·  jitter %.1f ms  ·  buffer %.0f ms%s", loss, fec, s.jitter_ms,
                            app.mic_stats.fill_ms,
                            app.settings.voice_focus && Denoiser::available() && s.voice_prob > 0.6f ? "  ·  voice" : "");
     } else {

@@ -30,10 +30,10 @@ std::string to_string(JNIEnv* env, jstring s) {
 extern "C" {
 
 JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jstring ip, jint port,
-                                                            jstring pin, jboolean voice_focus) {
+                                                            jstring pin, jboolean voice_focus, jboolean opus) {
     if (port <= 0 || port > 65535) return phonemic::AudioEngine::kBadAddress;
     return engine()->start(to_string(env, ip), static_cast<uint16_t>(port), to_string(env, pin),
-                           voice_focus == JNI_TRUE);
+                           voice_focus == JNI_TRUE, opus == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_stop(JNIEnv*, jobject) { engine()->stop(); }
@@ -60,6 +60,10 @@ JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_sessionId(JNIEnv*, jobject
 
 JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_streamGeneration(JNIEnv*, jobject) {
     return engine()->stream_generation();
+}
+
+JNIEXPORT jboolean JNICALL Java_com_phonemic_NativeBridge_isOpus(JNIEnv*, jobject) {
+    return engine()->using_opus() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_sampleRate(JNIEnv*, jobject) {

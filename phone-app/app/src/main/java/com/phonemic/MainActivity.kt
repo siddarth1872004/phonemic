@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statsText: TextView
     private lateinit var levelBar: LinearProgressIndicator
     private lateinit var voiceFocus: MaterialSwitch
+    private lateinit var opusSwitch: MaterialSwitch
     private lateinit var toggle: MaterialButton
     private lateinit var muteButton: MaterialButton
 
@@ -71,6 +72,7 @@ class MainActivity : AppCompatActivity() {
         statsText = findViewById(R.id.statsText)
         levelBar = findViewById(R.id.levelBar)
         voiceFocus = findViewById(R.id.voiceFocusSwitch)
+        opusSwitch = findViewById(R.id.opusSwitch)
         toggle = findViewById(R.id.toggleButton)
         muteButton = findViewById(R.id.muteButton)
         findViewById<TextView>(R.id.versionText).text = getString(R.string.version_fmt, BuildConfig.VERSION_NAME)
@@ -79,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         ipInput.setText(prefs.getString("ip", ""))
         pinInput.setText(prefs.getString("pin", ""))
         voiceFocus.isChecked = prefs.getBoolean("voice_focus", true)
+        opusSwitch.isChecked = prefs.getBoolean("opus", true)
 
         ipLayout.setEndIconOnClickListener { findPc() }
         ipInput.setOnEditorActionListener { _, action, _ ->
@@ -140,7 +143,8 @@ class MainActivity : AppCompatActivity() {
         // allowBackup is off, so this stays on the device.
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("ip", raw.trim()).putString("pin", pin)
-            .putBoolean("voice_focus", voiceFocus.isChecked).apply()
+            .putBoolean("voice_focus", voiceFocus.isChecked)
+            .putBoolean("opus", opusSwitch.isChecked).apply()
 
         StreamingService.clearError()
         startRequestedAt = System.currentTimeMillis()
@@ -149,6 +153,7 @@ class MainActivity : AppCompatActivity() {
             .putExtra(StreamingService.EXTRA_PORT, port)
             .putExtra(StreamingService.EXTRA_VOICE_FOCUS, voiceFocus.isChecked)
             .putExtra(StreamingService.EXTRA_PIN, pin)
+            .putExtra(StreamingService.EXTRA_OPUS, opusSwitch.isChecked)
         ContextCompat.startForegroundService(this, intent)
     }
 
@@ -197,6 +202,7 @@ class MainActivity : AppCompatActivity() {
         ipInput.isEnabled = !running
         pinInput.isEnabled = !running
         voiceFocus.isEnabled = !running
+        opusSwitch.isEnabled = !running
         ipLayout.isEndIconVisible = !running
 
         val st = StatusText.current()
@@ -220,7 +226,9 @@ class MainActivity : AppCompatActivity() {
             val lost = NativeBridge.pcLost()
             val recv = NativeBridge.pcReceived()
             val lossPct = if (recv + lost > 0) 100.0 * lost / (recv + lost) else 0.0
-            statsText.text = getString(R.string.stats_fmt, NativeBridge.sampleRate() / 1000.0, sent, lossPct)
+            val codec = if (NativeBridge.isOpus()) getString(R.string.codec_opus)
+            else getString(R.string.codec_pcm, NativeBridge.sampleRate() / 1000.0)
+            statsText.text = getString(R.string.stats_fmt, codec, sent, lossPct)
         } else {
             levelBar.setProgressCompat(0, true)
             statsText.text = ""

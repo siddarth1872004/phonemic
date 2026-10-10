@@ -18,7 +18,8 @@
 Oboe input (AAudio, 48 kHz, I16, mono, low-latency)
   └─ onAudioReady [realtime]  → peak meter → SPSC ring (32k samples) → sem_post
 sender thread
-  └─ 10 ms frames → wire.h AUDIO packet (media-clock timestamp, session id)
+  └─ 10 ms frames → [Opus encode, 48 kbps, FEC] → wire.h AUDIO packet
+     (media-clock timestamp, session id)
      → [crypto.h seal] → send() on a UDP socket connect()ed to the PC
   └─ non-blocking recv(): STATUS from the PC → atomics → UI / notification
   └─ reopens the stream after onErrorAfterClose (headset, Bluetooth…)
@@ -35,8 +36,8 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
               Receiver::process_audio  (one mutex: the pipeline is single-threaded)
                 decode (wire.h) → sender lock → auth policy → decrypt (crypto.h)
                 → JitterBuffer::pop_ready (reorder ≤2, detect loss)
-                → PCM16 → float → Resampler (any rate → 48 kHz)
-                → Concealer (fade-out replay on loss)
+                → Opus decode (FEC from the next packet on loss)  or
+                  PCM16 → float → Resampler (any rate → 48 kHz) → Concealer
                 → Denoiser (RNNoise, 480-sample frames)
                 → VoiceFx → GainLimiter → mute → peak meter
                 → AudioSinkIface::write(mic) [+ monitor]

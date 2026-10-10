@@ -39,7 +39,11 @@
     <string name="err_audio">Couldn\'t open the microphone (is another app using it?).</string>
     <string name="err_socket">Couldn\'t open a network connection.</string>
     <string name="err_crypto">Not enough memory to set up encryption.</string>
-    <string name="stats_fmt">%1$.1f kHz  ·  %2$d packets sent  ·  %3$.1f%% lost</string>
+    <string name="stats_fmt">%1$s  ·  %2$d packets sent  ·  %3$.1f%% lost</string>
+    <string name="codec_opus">Opus</string>
+    <string name="codec_pcm">%1$.1f kHz PCM</string>
+    <string name="opus">Compression (Opus)</string>
+    <string name="opus_desc">15× less Wi-Fi data and smoother on weak signal. Turn off only for the very lowest latency on a strong network.</string>
 
     <string name="notif_channel">PhoneMic streaming</string>
     <string name="notif_title">PhoneMic is using your microphone</string>
