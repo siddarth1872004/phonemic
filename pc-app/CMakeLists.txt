@@ -8,8 +8,10 @@ add_library(phonemic_core STATIC
   core/src/net.cpp
   core/src/opus_codec.cpp
   core/src/playout.cpp
+  core/src/process.cpp
   core/src/receiver.cpp
   core/src/settings.cpp
+  core/src/usb.cpp
   core/src/util.cpp
   core/src/virtual_mic.cpp
   core/src/voice_fx.cpp

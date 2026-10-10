@@ -4,6 +4,8 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
@@ -62,13 +64,14 @@ int64_t AudioEngine::pc_age_ms() const {
 }
 
 int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus,
-                       bool opus) {
+                       bool opus, bool usb) {
     stop();  // clean state
 
+    usb_ = usb;
     std::memset(&dest_, 0, sizeof dest_);
     dest_.sin_family = AF_INET;
     dest_.sin_port = htons(pc_port);
-    if (::inet_pton(AF_INET, pc_ip.c_str(), &dest_.sin_addr) != 1) {
+    if (::inet_pton(AF_INET, usb ? "127.0.0.1" : pc_ip.c_str(), &dest_.sin_addr) != 1) {
         LOGE("bad PC address: %s", pc_ip.c_str());
         return kBadAddress;
     }
@@ -84,20 +87,26 @@ int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::st
         return kCryptoError;
     }
 
-    socket_fd_ = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-    if (socket_fd_ < 0) {
-        LOGE("socket() failed: %s", strerror(errno));
-        return kSocketError;
+    if (!usb_) {
+        socket_fd_ = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+        if (socket_fd_ < 0) {
+            LOGE("socket() failed: %s", strerror(errno));
+            return kSocketError;
+        }
+        // connect() fixes the peer: send() needs no address and recv() only
+        // accepts datagrams from the PC (nobody else can spoof STATUS replies).
+        if (::connect(socket_fd_, reinterpret_cast<sockaddr*>(&dest_), sizeof dest_) != 0) {
+            LOGE("connect() failed: %s", strerror(errno));
+            ::close(socket_fd_);
+            socket_fd_ = -1;
+            return kSocketError;
+        }
     }
-    // connect() fixes the peer: send() needs no address and recv() only accepts
-    // datagrams from the PC (nobody else can spoof STATUS replies to us).
-    if (::connect(socket_fd_, reinterpret_cast<sockaddr*>(&dest_), sizeof dest_) != 0) {
-        LOGE("connect() failed: %s", strerror(errno));
-        close_stream();
-        ::close(socket_fd_);
-        socket_fd_ = -1;
-        return kSocketError;
-    }
+    // USB: the TCP connection is (re)made by the sender thread, so a cable or
+    // PC app that isn't ready yet just shows as "connecting" until it is.
+    next_connect_ms_ = 0;
+    tcp_out_.clear();
+    tcp_in_.clear();
 
     voice_focus_ = voice_focus;
     want_opus_ = opus;
@@ -111,7 +120,7 @@ int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::st
     last_errno_.store(0);
 
     if (!open_stream()) {
-        ::close(socket_fd_);
+        if (socket_fd_ >= 0) ::close(socket_fd_);
         socket_fd_ = -1;
         return kAudioError;
     }
@@ -261,6 +270,8 @@ void AudioEngine::sender_loop() {
             }
         }
 
+        if (usb_ && socket_fd_ < 0 && now_us() / 1000 >= next_connect_ms_) usb_connect();
+
         const size_t frame = static_cast<size_t>(sample_rate_.load() / 100);  // 10 ms
         if (frame_.size() != frame) frame_.assign(frame, 0);
         for (;;) {
@@ -271,6 +282,7 @@ void AudioEngine::sender_loop() {
             ring_read_.store(r + frame, std::memory_order_release);
             send_frame(frame_.data(), frame);
         }
+        if (usb_) usb_flush();
         poll_status();
     }
 }
@@ -313,28 +325,118 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
         if (r < 0) return;
         total = static_cast<size_t>(r);
     }
-    if (::send(socket_fd_, packet_.data(), total, MSG_DONTWAIT | MSG_NOSIGNAL) < 0) {
-        // Wi-Fi dropped / no route: keep capturing, report it, retry next frame.
+    transmit(packet_.data(), total);
+}
+
+void AudioEngine::transmit(const uint8_t* packet, size_t len) {
+    if (socket_fd_ < 0) return;  // USB not connected (yet): the frame is dropped
+    if (!usb_) {
+        if (::send(socket_fd_, packet, len, MSG_DONTWAIT | MSG_NOSIGNAL) < 0) {
+            // Wi-Fi dropped / no route: keep capturing, report it, retry next frame.
+            last_errno_.store(errno, std::memory_order_relaxed);
+        } else {
+            last_errno_.store(0, std::memory_order_relaxed);
+            packets_sent_.fetch_add(1, std::memory_order_relaxed);
+        }
+        return;
+    }
+    // TCP: never let a backlog build up (that would be pure added latency) —
+    // if ~170 ms of PCM is already queued, drop this frame instead.
+    if (tcp_out_.size() > 16 * 1024) return;
+    tcp_out_.push_back(static_cast<uint8_t>(len & 0xFF));
+    tcp_out_.push_back(static_cast<uint8_t>(len >> 8));
+    tcp_out_.insert(tcp_out_.end(), packet, packet + len);
+    packets_sent_.fetch_add(1, std::memory_order_relaxed);
+}
+
+void AudioEngine::usb_connect() {
+    next_connect_ms_ = now_us() / 1000 + 1000;  // retry at most once a second
+    const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
         last_errno_.store(errno, std::memory_order_relaxed);
-    } else {
-        last_errno_.store(0, std::memory_order_relaxed);
-        packets_sent_.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    // 127.0.0.1 on the phone is adb's own listener: connect() is immediate.
+    if (::connect(fd, reinterpret_cast<sockaddr*>(&dest_), sizeof dest_) != 0) {
+        last_errno_.store(errno, std::memory_order_relaxed);
+        ::close(fd);
+        return;
+    }
+    int one = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+    socket_fd_ = fd;
+    tcp_out_.clear();
+    tcp_in_.clear();
+    last_errno_.store(0, std::memory_order_relaxed);
+    LOGI("USB: connected through adb");
+}
+
+void AudioEngine::usb_disconnect(int err) {
+    if (socket_fd_ >= 0) ::close(socket_fd_);
+    socket_fd_ = -1;
+    tcp_out_.clear();  // a half-sent frame must not be continued on a new connection
+    tcp_in_.clear();
+    last_errno_.store(err, std::memory_order_relaxed);
+    next_connect_ms_ = now_us() / 1000 + 1000;
+}
+
+void AudioEngine::usb_flush() {
+    while (socket_fd_ >= 0 && !tcp_out_.empty()) {
+        const ssize_t n = ::send(socket_fd_, tcp_out_.data(), tcp_out_.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
+        if (n > 0) {
+            tcp_out_.erase(tcp_out_.begin(), tcp_out_.begin() + n);
+        } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+            break;  // socket buffer full: try again next wake
+        } else {
+            usb_disconnect(n < 0 ? errno : ECONNRESET);
+        }
     }
 }
 
+void AudioEngine::handle_status(const uint8_t* data, size_t len) {
+    pm_status s{};
+    if (pm_decode_status(data, len, &s) != PM_OK) return;
+    if (s.session_id != session_) return;  // stale report from an older session
+    pc_state_.store(s.state, std::memory_order_relaxed);
+    pc_buffer_ms_.store(s.buffer_ms, std::memory_order_relaxed);
+    pc_received_.store(s.received, std::memory_order_relaxed);
+    pc_lost_.store(s.lost, std::memory_order_relaxed);
+    pc_last_ms_.store(static_cast<int64_t>(now_us() / 1000), std::memory_order_relaxed);
+}
+
 void AudioEngine::poll_status() {
-    uint8_t buf[64];
+    if (socket_fd_ < 0) return;
+    uint8_t buf[256];
     for (;;) {
         const ssize_t n = ::recv(socket_fd_, buf, sizeof buf, MSG_DONTWAIT);
-        if (n <= 0) return;
-        pm_status s{};
-        if (pm_decode_status(buf, static_cast<size_t>(n), &s) != PM_OK) continue;
-        if (s.session_id != session_) continue;  // stale report from an older session
-        pc_state_.store(s.state, std::memory_order_relaxed);
-        pc_buffer_ms_.store(s.buffer_ms, std::memory_order_relaxed);
-        pc_received_.store(s.received, std::memory_order_relaxed);
-        pc_lost_.store(s.lost, std::memory_order_relaxed);
-        pc_last_ms_.store(static_cast<int64_t>(now_us() / 1000), std::memory_order_relaxed);
+        if (!usb_) {
+            if (n <= 0) return;
+            handle_status(buf, static_cast<size_t>(n));
+            continue;
+        }
+        if (n == 0) {  // the PC (or adb) closed the connection
+            usb_disconnect(ECONNRESET);
+            return;
+        }
+        if (n < 0) {
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) usb_disconnect(errno);
+            return;
+        }
+        // Length-prefixed STATUS frames.
+        tcp_in_.insert(tcp_in_.end(), buf, buf + n);
+        size_t pos = 0;
+        while (tcp_in_.size() - pos >= 2) {
+            const size_t len = tcp_in_[pos] | (static_cast<size_t>(tcp_in_[pos + 1]) << 8);
+            if (len == 0 || len > 512) {
+                usb_disconnect(EPROTO);
+                return;
+            }
+            if (tcp_in_.size() - pos < 2 + len) break;
+            handle_status(tcp_in_.data() + pos + 2, len);
+            pos += 2 + len;
+        }
+        tcp_in_.erase(tcp_in_.begin(), tcp_in_.begin() + static_cast<std::ptrdiff_t>(pos));
     }
 }
 

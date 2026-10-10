@@ -29,7 +29,11 @@ const char* state_text(uint8_t s) {
 }  // namespace
 
 std::string SourceId::describe() const {
-    if (web) return "browser " + ep.ip_string();
+    switch (via) {
+        case Via::Web: return "browser " + ep.ip_string();
+        case Via::Usb: return "USB cable";
+        case Via::Udp: break;
+    }
     return ep.ip_string();
 }
 
@@ -131,11 +135,11 @@ uint8_t Receiver::submit(const SourceId& src, const uint8_t* data, size_t len, b
     return process_audio(src, data, len, trusted, now);
 }
 
-void Receiver::release_web(uint64_t web_conn) {
+void Receiver::release_conn(uint64_t conn_id) {
     std::lock_guard<std::mutex> lk(pipe_mu_);
-    if (have_active_ && active_.web && active_.web_conn == web_conn) {
+    if (have_active_ && active_.via != SourceId::Via::Udp && active_.conn_id == conn_id) {
         have_active_ = false;
-        if (log_) log_->add("Browser mic disconnected (" + active_.ep.ip_string() + ")");
+        if (log_) log_->add(active_.describe() + " disconnected");
     }
 }
 
@@ -181,7 +185,7 @@ void Receiver::reject(const SourceId& src, uint8_t state, uint64_t now) {
     last_reject_ms_.store(now);
     last_reject_peer_ = src.describe();
     if (changed && log_) log_->add(src.describe() + ": " + state_text(state));
-    if (!src.web && now - last_reject_reply_ms_ >= 250) {
+    if (src.via == SourceId::Via::Udp && now - last_reject_reply_ms_ >= 250) {
         last_reject_reply_ms_ = now;
         send_status(src.ep, state, src.session, now);
     }
@@ -212,8 +216,10 @@ void Receiver::begin_session(const SourceId& src, const pm_audio_header& h, uint
     if (mic_) mic_->flush();
     if (monitor_sink_) monitor_sink_->flush();
     if (log_) {
-        std::string m = (src.web ? "Browser mic connected: " : "Phone connected: ") + src.ep.ip_string();
-        m += active_encrypted_ ? " (encrypted" : (src.web ? " (TLS" : " (unencrypted");
+        std::string m = src.via == SourceId::Via::Web   ? "Browser mic connected: " + src.ep.ip_string()
+                        : src.via == SourceId::Via::Usb ? std::string("Phone connected over USB")
+                                                        : "Phone connected: " + src.ep.ip_string();
+        m += active_encrypted_ ? " (encrypted" : (src.via == SourceId::Via::Web ? " (TLS" : " (unencrypted");
         m += h.codec == PM_CODEC_OPUS ? ", Opus)" : ", " + std::to_string(h.sample_rate) + " Hz PCM)";
         if (h.version == PM_VERSION_LEGACY) m += " — old phone app, please update";
         log_->add(m);
@@ -350,7 +356,8 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
         play_frame(scratch_rs_.data(), scratch_rs_.size());
     }
 
-    if (!src.web && now - last_status_ms_ >= kStatusIntervalMs) send_status(src.ep, PM_STATUS_OK, src.session, now);
+    if (src.via == SourceId::Via::Udp && now - last_status_ms_ >= kStatusIntervalMs)
+        send_status(src.ep, PM_STATUS_OK, src.session, now);
     return PM_STATUS_OK;
 }
 
@@ -444,10 +451,11 @@ void Receiver::periodic(uint64_t now) {
     if (now - active_last_ms_ >= kSessionTimeoutMs) {
         have_active_ = false;
         peak_.store(0.0f);
-        if (log_) log_->add((active_.web ? "Browser mic stopped: " : "Phone stopped streaming: ") + active_.ep.ip_string());
+        if (log_) log_->add("Stopped streaming: " + active_.describe());
         return;
     }
-    if (!active_.web && now - last_status_ms_ >= kStatusIntervalMs) send_status(active_.ep, PM_STATUS_OK, active_.session, now);
+    if (active_.via == SourceId::Via::Udp && now - last_status_ms_ >= kStatusIntervalMs)
+        send_status(active_.ep, PM_STATUS_OK, active_.session, now);
 }
 
 Receiver::Snapshot Receiver::snapshot() const {
@@ -473,7 +481,10 @@ Receiver::Snapshot Receiver::snapshot() const {
     s.connected = have_active_ && now - active_last_ms_ < 1500;
     if (have_active_) {
         s.peer = active_.describe();
-        s.peer_is_web = active_.web;
+        s.peer_is_web = active_.via == SourceId::Via::Web;
+        s.peer_is_usb = active_.via == SourceId::Via::Usb;
+        s.session_received = session_received_.load();
+        s.session_lost = session_lost_.load();
         s.encrypted = active_encrypted_;
         s.sender_version = active_version_;
         s.sample_rate = active_rate_;

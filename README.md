@@ -24,6 +24,7 @@ No extra hardware, no subscription, no Electron. Native code end to end: a C++ d
 |---|---|
 | 🔎 **Zero typing** | The phone app finds your PC on the Wi-Fi by itself ("Find my PC"). |
 | 🌐 **No app needed** | Or scan the QR code in the PC window: the phone's **browser** becomes the mic (Android and iPhone). |
+| 🔌 **USB cable mode** | Bad Wi-Fi? Plug the phone in: PhoneMic sets up `adb reverse` by itself and streams over the cable. |
 | 📦 **Opus compression** | ~48 kbps instead of 768 kbps raw PCM, with forward error correction that rebuilds lost packets. On by default; one switch in the app. |
 | 🚀 **Low latency** | 10 ms UDP frames, a lock-free audio path, a Wi-Fi low-latency lock on the phone, and a selectable buffer (20–150 ms). |
 | 🎚️ **Glitch-free over time** | Adaptive playout absorbs phone/PC clock drift (no creeping delay, no periodic clicks). The jitter buffer handles reordering and loss concealment. |
@@ -117,7 +118,8 @@ The browser client was also checked against the real server in headless Chromium
 - [x] Browser mic built into the app (QR code + pairing code)
 - [x] Windows, Linux, macOS (experimental) desktop builds; Android in CI
 - [x] Opus codec (48 kbps, FEC + concealment)
-- [ ] USB (`adb reverse`) and Bluetooth transports
+- [x] USB cable mode (`adb reverse`, set up automatically)
+- [ ] Bluetooth transport
 - [ ] Native ACX virtual-mic driver (code written, needs WDK build + signing)
 
 ## 📄 License

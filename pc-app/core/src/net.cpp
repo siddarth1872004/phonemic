@@ -93,6 +93,8 @@ std::string primary_ip() {
 
 }  // namespace
 
+void init() { ensure_init(); }
+
 std::string Endpoint::ip_string() const {
     in_addr a{};
     a.s_addr = addr;

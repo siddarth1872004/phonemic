@@ -18,6 +18,7 @@
 #include "phonemic/audio_out.hpp"
 #include "phonemic/net.hpp"
 #include "phonemic/receiver.hpp"
+#include "phonemic/usb.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
 #ifdef PHONEMIC_HAVE_WEB
@@ -52,6 +53,7 @@ void usage() {
         "  --no-virtual-mic    don't create/use the virtual microphone\n"
         "  --null              discard audio (no sound device; for testing)\n"
         "  --web [PORT]        also serve the browser mic (HTTPS, default port 8443)\n"
+        "  --usb               accept a phone on a USB cable (runs adb reverse)\n"
         "  --measure [N]       print one-way latency stats for N packets (use with\n"
         "                      phonemic-softphone --wallclock on the same machine)\n"
 #ifdef _WIN32
@@ -75,7 +77,7 @@ int main(int argc, char** argv) {
     uint16_t port = 4010;
     if (const char* e = std::getenv("PHONEMIC_PORT")) port = static_cast<uint16_t>(std::atoi(e));
     std::string pin, device, monitor;
-    bool focus = true, list = false, use_vmic = true, null_out = false, web = false, driver = false;
+    bool focus = true, list = false, use_vmic = true, null_out = false, web = false, driver = false, usb = false;
     uint16_t web_port = 8443;
     int latency = 40;
     float gain = 0;
@@ -103,6 +105,7 @@ int main(int argc, char** argv) {
         else if (a == "--web") { web = true; if (has_num_next()) web_port = static_cast<uint16_t>(std::stoi(next())); }
         else if (a == "--measure") { measure = 300; if (has_num_next()) measure = std::stol(next()); }
         else if (a == "--driver") driver = true;
+        else if (a == "--usb") usb = true;
         else if (a == "--version") { std::puts("phonemic-receiver " PHONEMIC_VERSION); return 0; }
         else { usage(); return a == "--help" || a == "-h" ? 0 : 2; }
     }
@@ -183,6 +186,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    UsbIngest usb_in(&rx, &log);
+    AdbBridge adb(&log);
+    if (usb) {
+        if (!usb_in.start(port, &err)) std::fprintf(stderr, "USB: %s\n", err.c_str());
+        adb.start(port);
+    }
+
 #ifdef PHONEMIC_HAVE_WEB
     WebServer webserver(&rx, &log);
     std::string token;
@@ -208,6 +218,7 @@ int main(int argc, char** argv) {
                     WebServer::url_for(addrs.empty() ? "<pc-ip>" : addrs[0].ip, web_port, token).c_str());
     }
 #endif
+    if (usb) std::printf(" USB: plug the phone in (USB debugging on), enable \"USB cable\" in the app\n");
     std::printf(" Audio -> %s\n", out_name.c_str());
     if (vmic.ready) std::printf(" In Discord/Zoom/OBS pick the microphone: \"%s\"\n", vmic.mic_name.c_str());
     else if (!vmic.help.empty()) std::printf(" Note: %s\n", vmic.help.c_str());
@@ -229,6 +240,8 @@ int main(int argc, char** argv) {
             }
         }
     }
+    adb.stop();
+    usb_in.stop();
     rx.stop();
     teardown_virtual_mic();
 

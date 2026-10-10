@@ -78,5 +78,5 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
 |---|---|
 | Wi-Fi UDP (native app) | ✅ |
 | WebSocket over TLS (any browser) | ✅ built into the app |
-| USB (`adb reverse`) | planned; the receiver's sources are transport-agnostic |
+| USB cable (TCP via `adb reverse`, length-prefixed) | ✅ `pc-app/core/src/usb.cpp`; the app keeps `adb reverse` set up |
 | Bluetooth RFCOMM | planned |

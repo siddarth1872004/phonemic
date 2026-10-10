@@ -35,8 +35,10 @@ public:
     // every packet. `voice_focus` picks the platform's voice-processing input
     // (noise suppression / echo cancellation) vs. a minimally processed one.
     // `opus` compresses each 10 ms frame (~48 kbps instead of 768 kbps PCM).
+    // `usb` streams over TCP to 127.0.0.1:pc_port, which `adb reverse` (set up by
+    // the PC app) forwards to the PC; pc_ip is ignored then.
     int start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus,
-              bool opus);
+              bool opus, bool usb);
     void stop();  // idempotent
     void set_muted(bool m) { muted_.store(m, std::memory_order_relaxed); }
 
@@ -67,6 +69,12 @@ private:
     void sender_loop();
     void send_frame(const int16_t* pcm, size_t n);
     void poll_status();
+    void handle_status(const uint8_t* data, size_t len);
+    void transmit(const uint8_t* packet, size_t len);
+    // USB (TCP) transport.
+    void usb_connect();
+    void usb_disconnect(int err);
+    void usb_flush();
 
     // ---- capture -> sender ring (single producer / single consumer) ----
     static constexpr size_t kRingSize = 1 << 15;  // samples (~680 ms @ 48 kHz)
@@ -85,6 +93,9 @@ private:
     std::vector<uint8_t> encoded_;
 
     int socket_fd_ = -1;
+    bool usb_ = false;
+    uint64_t next_connect_ms_ = 0;
+    std::vector<uint8_t> tcp_out_, tcp_in_;  // length-prefixed frames
     sockaddr_in dest_{};
     bool encrypt_ = false;
     uint8_t key_[32] = {0};

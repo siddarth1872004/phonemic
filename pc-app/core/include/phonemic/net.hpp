@@ -53,6 +53,9 @@ struct LocalAddress {
 };
 
 // LAN IPv4 addresses of this machine, primary first, loopback/link-local skipped.
+// Initialise the socket library (Winsock); idempotent, no-op elsewhere.
+void init();
+
 std::vector<LocalAddress> local_addresses();
 std::string host_name();
 

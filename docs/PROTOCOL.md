@@ -9,6 +9,12 @@ real server. If this document and the headers disagree, the headers win.
 ## Transport
 
 - Native app → PC: **UDP**, default port **4010**. One datagram = one packet.
+- Native app → PC over a **USB cable**: TCP through `adb reverse` (the phone
+  connects to its own `127.0.0.1:4010`; the PC app runs
+  `adb reverse tcp:4010 tcp:<pc port>` and listens on `127.0.0.1` only). TCP has no
+  message boundaries, so every packet is prefixed with its length as a
+  little-endian u16: `[len][datagram]`. The PC replies with framed STATUS
+  packets on the same connection. Same packets, same encryption rules as UDP.
 - Browser → PC: **WebSocket over TLS** (`wss://<pc>:8443/ws?t=<pairing code>`),
   one binary message = one AUDIO packet (no encryption flag: TLS covers it).
 

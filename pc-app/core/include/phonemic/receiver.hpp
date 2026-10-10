@@ -46,14 +46,16 @@ public:
     virtual uint32_t buffered_ms() const { return 0; }
 };
 
-// Identifies a sender: a UDP endpoint, or a browser connection.
+// Identifies a sender: a UDP endpoint, a browser connection, or a phone on a
+// USB cable (TCP through `adb reverse`).
 struct SourceId {
-    bool web = false;
-    net::Endpoint ep;          // UDP sender (web: the browser's address)
-    uint64_t web_conn = 0;     // web connection id
+    enum class Via : uint8_t { Udp, Web, Usb };
+    Via via = Via::Udp;
+    net::Endpoint ep;          // sender address (USB: 127.0.0.1)
+    uint64_t conn_id = 0;      // browser / USB connection id
     uint32_t session = 0;      // from the packet
     bool same_sender(const SourceId& o) const {
-        return web == o.web && ep == o.ep && web_conn == o.web_conn && session == o.session;
+        return via == o.via && ep == o.ep && conn_id == o.conn_id && session == o.session;
     }
     std::string describe() const;
 };
@@ -93,8 +95,8 @@ public:
     // pairing token), so plaintext is acceptable even when a PIN is set.
     // Returns a PM_STATUS_* code describing what happened.
     uint8_t submit(const SourceId& src, const uint8_t* data, size_t len, bool trusted);
-    // A browser connection closed: release the mic if it owned it.
-    void release_web(uint64_t web_conn);
+    // A browser / USB connection closed: release the mic if it owned it.
+    void release_conn(uint64_t conn_id);
 
     // Optional hook called for every accepted audio packet (latency measurement).
     using PacketObserver = std::function<void(const pm_audio_header&, uint64_t arrival_wall_us)>;
@@ -110,6 +112,8 @@ public:
         bool connected = false;      // packets from the active sender within 1.5 s
         std::string peer;            // active sender
         bool peer_is_web = false;
+        bool peer_is_usb = false;
+        uint32_t session_received = 0, session_lost = 0;
         bool encrypted = false;
         uint8_t sender_version = 0;  // 1 = legacy app
         uint32_t sample_rate = 0;

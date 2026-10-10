@@ -23,9 +23,15 @@ object StatusText {
                 else -> Status(R.string.err_socket, Tone.BAD)
             }
         }
-        when (NativeBridge.lastSendErrno()) {
-            ENETUNREACH, EHOSTUNREACH -> return Status(R.string.status_no_network, Tone.BAD)
-            ECONNREFUSED -> return Status(R.string.status_pc_not_running, Tone.BAD)
+        val errno = NativeBridge.lastSendErrno()
+        if (StreamingService.usbMode) {
+            // Over USB any connection error means adb isn't forwarding (yet).
+            if (errno != 0 && NativeBridge.pcAgeMs() !in 0..2500) return Status(R.string.status_usb_waiting, Tone.WARN)
+        } else {
+            when (errno) {
+                ENETUNREACH, EHOSTUNREACH -> return Status(R.string.status_no_network, Tone.BAD)
+                ECONNREFUSED -> return Status(R.string.status_pc_not_running, Tone.BAD)
+            }
         }
         val age = NativeBridge.pcAgeMs()
         if (age in 0..2500) {

@@ -12,6 +12,7 @@ add_executable(phonemic-tests
   test_websocket.cpp
   test_settings.cpp
   test_opus.cpp
+  test_usb.cpp
 )
 if(PHONEMIC_WITH_WEB)
   target_sources(phonemic-tests PRIVATE test_web_server.cpp)

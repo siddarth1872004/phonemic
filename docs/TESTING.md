@@ -17,6 +17,8 @@ ctest --test-dir build --output-on-failure
 | `test_voice_fx.cpp`, `test_denoise.cpp` | pitch ratios by zero crossings, filter response, echo impulse response, RNNoise noise reduction |
 | `test_receiver.cpp` | end-to-end pipeline: reorder + loss, PIN policy, sender lock, resampling, legacy phones, and over real UDP: discovery and STATUS feedback |
 | `test_web_server.cpp` | real TLS: page + CSP, wrong pairing code → 403, WebSocket upgrade, audio delivered |
+| `test_opus.cpp` | Opus round trip (pitch, < 70 kbps), receiver decoding, a dropped packet rebuilt from FEC, corrupt packet concealed |
+| `test_usb.cpp` | length-prefixed framing, real TCP stream → audio + STATUS, PIN policy over USB, listener unreachable from the LAN, process runner |
 | `test_websocket.cpp`, `test_settings.cpp`, `test_ipc.cpp` | SHA-1/Base64/RFC 6455 vectors, frame parser, settings round trip, driver ring |
 | `test_wire_c99.c` | the shared headers compile as strict C99 |
 
