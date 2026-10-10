@@ -70,6 +70,8 @@
   <ItemDefinitionGroup Condition="'$(PhonemicAcxRoot)' != ''">
     <ClCompile>
       <AdditionalIncludeDirectories>$(PhonemicAcxRoot)\Include\$(PhonemicAcxSdkVersion)\km\acx\km\$(ACX_VERSION_MAJOR).$(ACX_VERSION_MINOR);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- A WDK without ACX support doesn't define these for us. -->
+      <PreprocessorDefinitions>ACX_VERSION_MAJOR=$(ACX_VERSION_MAJOR);ACX_VERSION_MINOR=$(ACX_VERSION_MINOR);%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(PhonemicAcxRoot)\Lib\$(PhonemicAcxSdkVersion)\km\x64\acx\km\$(ACX_VERSION_MAJOR).$(ACX_VERSION_MINOR)\acxstub.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -84,7 +86,9 @@
     <ClInclude Include="..\ipc\ring.h" />
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="phonemic.inf" />
+    <!-- PhonemicSkipInf=true builds just phonemic.sys (CI: the runner image's
+         InfVerif.dll is missing, and packaging needs signing anyway). -->
+    <Inf Include="phonemic.inf" Condition="'$(PhonemicSkipInf)' != 'true'" />
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
