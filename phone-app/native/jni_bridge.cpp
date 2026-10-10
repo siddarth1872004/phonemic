@@ -1,53 +1,91 @@
 // JNI glue between com.phonemic.NativeBridge and the native AudioEngine.
-// This file only marshals control calls; no audio buffer ever crosses here.
+// Only control calls and telemetry cross here — never an audio buffer.
 #include <jni.h>
 
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include "audio_engine.h"
 
 namespace {
-// One engine per process. Guarded only by the fact that start/stop are driven
-// from the single StreamingService lifecycle on the main thread.
+std::mutex g_mu;  // start/stop can come from the service and the notification action
 std::unique_ptr<phonemic::AudioEngine> g_engine;
+
+phonemic::AudioEngine* engine() {
+    std::lock_guard<std::mutex> lk(g_mu);
+    if (!g_engine) g_engine = std::make_unique<phonemic::AudioEngine>();
+    return g_engine.get();
+}
+
+std::string to_string(JNIEnv* env, jstring s) {
+    if (!s) return {};
+    const char* c = env->GetStringUTFChars(s, nullptr);
+    std::string out(c ? c : "");
+    if (c) env->ReleaseStringUTFChars(s, c);
+    return out;
+}
 }  // namespace
 
 extern "C" {
 
-JNIEXPORT jboolean JNICALL
-Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jstring j_ip, jint port,
-                                     jstring j_pin) {
-    const char* ip_c = env->GetStringUTFChars(j_ip, nullptr);
-    std::string ip(ip_c ? ip_c : "");
-    env->ReleaseStringUTFChars(j_ip, ip_c);
-
-    const char* pin_c = env->GetStringUTFChars(j_pin, nullptr);
-    std::string pin(pin_c ? pin_c : "");
-    env->ReleaseStringUTFChars(j_pin, pin_c);
-
-    if (!g_engine) g_engine = std::make_unique<phonemic::AudioEngine>();
-    return g_engine->start(ip, static_cast<uint16_t>(port), pin) ? JNI_TRUE : JNI_FALSE;
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jstring ip, jint port,
+                                                            jstring pin, jboolean voice_focus) {
+    if (port <= 0 || port > 65535) return phonemic::AudioEngine::kBadAddress;
+    return engine()->start(to_string(env, ip), static_cast<uint16_t>(port), to_string(env, pin),
+                           voice_focus == JNI_TRUE);
 }
 
-JNIEXPORT void JNICALL
-Java_com_phonemic_NativeBridge_stop(JNIEnv*, jobject) {
-    if (g_engine) g_engine->stop();
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_stop(JNIEnv*, jobject) { engine()->stop(); }
+
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_setMuted(JNIEnv*, jobject, jboolean m) {
+    engine()->set_muted(m == JNI_TRUE);
 }
 
-JNIEXPORT jlong JNICALL
-Java_com_phonemic_NativeBridge_packetsSent(JNIEnv*, jobject) {
-    return g_engine ? static_cast<jlong>(g_engine->packets_sent()) : 0;
+JNIEXPORT jboolean JNICALL Java_com_phonemic_NativeBridge_isRunning(JNIEnv*, jobject) {
+    return engine()->running() ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT jfloat JNICALL
-Java_com_phonemic_NativeBridge_inputLevel(JNIEnv*, jobject) {
-    return g_engine ? g_engine->input_level() : 0.0f;
+JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_packetsSent(JNIEnv*, jobject) {
+    return static_cast<jlong>(engine()->packets_sent());
 }
 
-JNIEXPORT jint JNICALL
-Java_com_phonemic_NativeBridge_sessionId(JNIEnv*, jobject) {
-    return g_engine ? static_cast<jint>(g_engine->session_id()) : -1;
+JNIEXPORT jfloat JNICALL Java_com_phonemic_NativeBridge_inputLevel(JNIEnv*, jobject) {
+    return engine()->input_level();
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_sessionId(JNIEnv*, jobject) {
+    return engine()->audio_session_id();
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_streamGeneration(JNIEnv*, jobject) {
+    return engine()->stream_generation();
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_sampleRate(JNIEnv*, jobject) {
+    return engine()->sample_rate();
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_pcState(JNIEnv*, jobject) { return engine()->pc_state(); }
+
+JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcAgeMs(JNIEnv*, jobject) {
+    return static_cast<jlong>(engine()->pc_age_ms());
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_pcBufferMs(JNIEnv*, jobject) {
+    return engine()->pc_buffer_ms();
+}
+
+JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcLost(JNIEnv*, jobject) {
+    return static_cast<jlong>(engine()->pc_lost());
+}
+
+JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcReceived(JNIEnv*, jobject) {
+    return static_cast<jlong>(engine()->pc_received());
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_lastSendErrno(JNIEnv*, jobject) {
+    return engine()->last_send_errno();
 }
 
 }  // extern "C"

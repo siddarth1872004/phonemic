@@ -1,90 +1,51 @@
-# Web client (browser as the phone)
+# Browser mic (no app install)
 
-An alternative to the native Android app: the phone opens a **web page** that
-captures its mic and streams to the PC. No install, no SDK/NDK, works on Android
-*and* iOS. This is a **hybrid** with the native app, not a replacement — see the
-tradeoffs below.
+Any phone (Android or iPhone) can be the microphone through its web browser.
+The page is served **by the desktop app itself**, and its audio goes through the
+same pipeline as the native app: Voice Focus, voice changer, gain, virtual
+microphone.
+
+## Use it
+
+1. In the PhoneMic window, tick **Browser mic**.
+2. Scan the QR code with the phone's camera (or open the link shown).
+3. The first time, the browser warns that the connection isn't private. That's
+   expected: it's your PC's own self-signed certificate. Tap **Advanced →
+   Proceed**. The certificate is kept, so this happens once per phone.
+4. Tap **Start mic** and allow the microphone.
 
 ## How it works
 
 ```
- Phone browser                                   PC (phonemic-web-gateway)
- ┌──────────────────────────────┐               ┌────────────────────────────┐
- │ getUserMedia (mic)           │               │ HTTPS: serves web-client/  │
- │  → AudioWorklet (PCM16, 10ms)│  wss:// binary │ wss /ws: WebSocket         │
- │  → protocol::encode (JS)     │ ────────────► │  → protocol::decode         │
- │  → WebSocket.send            │  PCM16 frames  │  → cpal output (speakers)  │
- └──────────────────────────────┘               └────────────────────────────┘
+phone browser                                   PhoneMic desktop app
+getUserMedia → AudioWorklet (10 ms PCM16)       HTTPS: index.html, app.js, worklet (embedded)
+  → v2 AUDIO packet (actual sample rate)  ───►  wss /ws?t=<pairing code>
+  → WebSocket (drops frames if congested)        → Receiver::submit() → same pipeline
+  ◄─── {"state":0,"buffer":40,...} status ─────
 ```
 
-The page is served **over HTTPS by the gateway** (browsers only expose
-`getUserMedia` in a secure context). Because the page and the WebSocket share an
-origin, `wss://…/ws` reuses the cert the browser already accepted for the page.
-Frames use the **exact same `phonemic-protocol` framing** as the native app and
-the `softphone` — one wire format everywhere.
+- **Why HTTPS:** browsers only allow microphone access in a secure context.
+- **Pairing code:** a random 8-character code in the link/QR (`#t=…`, a URL
+  fragment, so it's never sent in plain HTTP requests or logs) must be
+  presented to open the audio WebSocket. Compared in constant time; "New code"
+  in the app invalidates old links. The Origin header is checked, and the pages
+  use a strict Content-Security-Policy.
+- **Certificate:** ECDSA P-256, generated on first use and stored in the
+  per-user config directory (`web-cert.pem`, `web-key.pem` with 0600 on Linux).
+- **Sample rate:** the page tries 48 kHz; if the browser can't (Firefox with a
+  44.1 kHz mic), it uses the device rate and the PC resamples.
+- **Robustness:** the AudioContext is created inside the tap (required by iOS),
+  the screen is kept awake with the Wake Lock API, frames are dropped rather
+  than queued when the network is congested (TCP would otherwise let latency
+  grow without bound), and the page reconnects automatically.
 
-## Why WebSocket + raw PCM16 (and not WebRTC)
+## Native app vs browser
 
-| Option | Verdict |
-|---|---|
-| **WebSocket + PCM16** ✅ | Chosen. Universal browser support; reuses the protocol crate, jitter buffer, and cpal sink unchanged; no Opus, so no CMake dependency. On a LAN, TCP reliability costs little. |
-| **WebRTC** | Best-in-theory for lossy links (Opus + PLC + jitter + echo-cancel, all native in the browser — actually honors principle #1). **But** WebRTC audio is always Opus, so the PC must *decode* Opus — which needs libopus/CMake, currently unavailable. Also a heavy `webrtc-rs` + signaling stack. Deferred, not rejected. |
-| **WebTransport** | UDP-like datagrams (matches our loss-tolerant design) and could carry our PCM16 protocol directly. Good future upgrade; newer, thinner PC-side support. |
-
-## Tradeoffs vs. the native app
-
-- **Bends principle #1.** Capture goes through an `AudioWorklet` — JavaScript
-  touches the PCM (on the audio thread, not main, but still JS/GC-capable). The
-  native app keeps the hot path pure C++. The web client trades that for
-  zero-install reach. The native path remains the pure-native option.
-- **No USB, no Bluetooth.** Browsers can't do RFCOMM or USB-accessory. The web
-  client is Wi-Fi/network only. USB/BT stay native-only (Phases 2–3).
-- **48 kHz assumption.** We force `AudioContext({sampleRate: 48000})`; if a
-  browser refuses, pitch shifts (the protocol has no sample-rate field yet).
-- **Self-signed cert warning.** The user accepts it once per device.
-
-Unchanged either way: the **Windows virtual driver** (Phase 4) is what makes
-this show up as a real microphone; the transport doesn't affect it.
-
-## Building & running the gateway
-
-```sh
-cargo run -p phonemic-web-gateway            # serves https://0.0.0.0:8443
-# then on the phone: open https://<PC-LAN-IP>:8443/  → accept cert → Start mic
-```
-
-### Toolchain requirement (important)
-
-The gateway needs TLS, which pulls `raw-dylib` crates (`getrandom`,
-`windows-sys`). Building those on a **`x86_64-pc-windows-gnu`** toolchain
-requires GNU binutils — specifically `dlltool` **and** `as`. The rustup gnu
-toolchain bundles `dlltool` but **not** `as`, so on a bare gnu setup the build
-fails with `dlltool ... CreateProcess`. Two fixes:
-
-1. **Complete the GNU toolchain** — install MSYS2 / MinGW-w64, then put its
-   `bin` (containing `as.exe`, `dlltool.exe`) on `PATH`.
-2. **Switch to the MSVC toolchain** (no `dlltool` needed) — install the Visual
-   Studio Build Tools (C++ + Windows SDK), then:
-   ```sh
-   rustup toolchain install stable-x86_64-pc-windows-msvc
-   rustup default stable-x86_64-pc-windows-msvc
-   ```
-
-`protocol` and `pc-app/core` build fine on the bare gnu toolchain (they avoid
-`raw-dylib`), which is why they remain the workspace's `default-members`.
-
-On this dev machine the gateway builds by putting the already-installed
-**w64devkit** (its `bin` folder, which has `as` + `dlltool`) on
-`PATH` before `cargo build -p phonemic-web-gateway`. It has been built and
-verified end-to-end there (served the page over HTTPS and streamed 200 PCM16
-frames — including reordered and dropped frames — through the jitter buffer).
-
-### Opus status (deferred)
-
-CMake is installed, but the Rust libopus bindings tried (`audiopus_sys`,
-`opusic-sys`) both hit Windows/MinGW build-script bugs (an extended-path `cp`
-failure, and a CMake+Ninja compiler self-test failure with w64devkit's `ar`).
-PCM16 works today, so Opus is deferred. Paths to enable it: build libopus once
-by hand and link the `opus` crate via `pkg-config`, or build on an MSVC
-toolchain where these `-sys` crates work out of the box. Opus's value (PLC, lower
-bitrate) matters most for Bluetooth/internet, not the LAN web path.
+| | Android app | Browser |
+|---|---|---|
+| Install | APK | none |
+| iPhone | ✗ | ✓ |
+| Screen off | keeps streaming | most browsers pause the mic |
+| Transport | UDP (loss-tolerant) | TCP (WebSocket) |
+| Latency | lowest | slightly higher |
+| Encryption | optional PIN | always (TLS) |

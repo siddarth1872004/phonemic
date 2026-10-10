@@ -40,17 +40,25 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
 
   <PropertyGroup>
-    <!-- ACX headers/libs ship with the WDK; ensure the ACX extension is enabled
-         so acx.h and the ACX import libraries resolve. -->
     <EnableInf2cat>true</EnableInf2cat>
+    <!-- ACX (Audio Class eXtensions) 1.0 on KMDF 1.33: the WDK targets add the
+         ACX headers and import library when these are set. ACX needs Windows 11. -->
+    <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
+    <KMDF_VERSION_MINOR>33</KMDF_VERSION_MINOR>
+    <ACX_VERSION_MAJOR>1</ACX_VERSION_MAJOR>
+    <ACX_VERSION_MINOR>0</ACX_VERSION_MINOR>
+    <TargetVersion>Windows10</TargetVersion>
   </PropertyGroup>
 
   <ItemDefinitionGroup>
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
-      <PreprocessorDefinitions>_KERNEL_MODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_KERNEL_MODE;POOL_ZERO_DOWN_LEVEL_SUPPORT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(DDK_LIB_PATH)ksguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
 
   <ItemGroup>

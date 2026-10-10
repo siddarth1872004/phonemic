@@ -1,94 +1,79 @@
 # Building PhoneMic
 
-## PC side (Rust) — works today
+## Desktop app (C++17, CMake)
 
-Requires a Rust toolchain (tested with 1.96). From the repo root:
-
-```sh
-# Run the protocol unit tests
-cargo test -p phonemic-protocol
-
-# Build the Phase 0 receiver
-cargo build -p phonemic-core --release
-
-# Run it (listens on udp 0.0.0.0:4010 by default; override with PHONEMIC_PORT)
-cargo run -p phonemic-core
-# or the built binary:
-target/release/phonemic-receiver.exe
-```
-
-### Testing the PC pipeline without a phone
-
-`softphone` emulates the Android sender on the PC using the real wire protocol,
-so the whole receive path can be exercised and latency-measured with no device:
+Everything third-party is fetched by CMake at configure time, at pinned
+versions (`cmake/Dependencies.cmake`). You need git, CMake ≥ 3.21 and a C++17
+compiler; on Linux also the X11/GL headers for the window.
 
 ```sh
-cargo build -p phonemic-core --bins --release
-
-# terminal A: receiver in latency-measurement mode
-PHONEMIC_PORT=4067 target/release/phonemic-receiver.exe --measure
-
-# terminal B: stream synthetic audio at it
-target/release/softphone.exe 127.0.0.1 4067
+cmake --preset release          # = cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build --preset release  # = cmake --build build --config Release --parallel
+ctest --preset release          # run the tests
 ```
 
-The receiver collects 300 packets and prints one-way latency (min/median/p95/max
-+ jitter). On loopback this isolates software/OS overhead (sub-millisecond); a
-real phone adds Oboe capture + Wi-Fi, measured with the clap test in
-[PHASE0-BRINGUP.md](PHASE0-BRINGUP.md).
+Binaries land in `build/bin/` (`build/bin/Release/` with Visual Studio):
 
-### Web gateway (needs a complete toolchain)
+| Binary | What |
+|---|---|
+| `PhoneMic` / `PhoneMic.exe` | the desktop app |
+| `phonemic-receiver` | the same engine without a window (servers, scripting, `--measure`) |
+| `phonemic-softphone` | emulates the phone: tone, PIN, loss/reorder simulation, discovery |
+| `phonemic-tests` | the test suite |
 
-`phonemic-web-gateway` uses TLS, which pulls `raw-dylib` crates that the bare
-windows-gnu toolchain can't build (missing `as`). On this machine, put the
-already-installed **w64devkit** on `PATH` first:
+### Windows
+Install **Visual Studio 2022 Build Tools** (workload *Desktop development with C++*)
+and **CMake**, then from a *Developer PowerShell*:
+```powershell
+cmake -S . -B build -A x64
+cmake --build build --config Release --parallel
+```
+The executable is fully static (no VC++ redistributable needed). MinGW-w64 works too.
 
+### Linux
 ```sh
-export PATH="$HOME/w64devkit/bin:$PATH"   # provides as + dlltool
-cargo run -p phonemic-web-gateway                      # https://<pc-ip>:8443
+# Debian/Ubuntu
+sudo apt install build-essential cmake git libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+# Fedora:  sudo dnf install gcc-c++ cmake git libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel
+# Arch:    sudo pacman -S base-devel cmake git libx11 libxrandr libxinerama libxcursor libxi mesa
 ```
+At runtime the app talks to PulseAudio or PipeWire (through `pactl` and libpulse,
+loaded on demand) and falls back to ALSA. It runs on Wayland through XWayland.
 
-Then open `https://<pc-ip>:8443/` on the phone, accept the self-signed cert, and
-tap Start mic. See [WEB-CLIENT.md](WEB-CLIENT.md) for the full story and the
-MSVC alternative.
+### macOS (experimental)
+Xcode command-line tools + CMake. Install BlackHole for the virtual mic.
 
-The receiver prints the address it's listening on. Point the phone app at this
-PC's LAN IP and port 4010.
+### Build options
 
-> For the full step-by-step to finish Phase 0 (install → build → run → measure
-> latency), see **[PHASE0-BRINGUP.md](PHASE0-BRINGUP.md)**. The summary below is
-> just the prerequisite list.
+| Option | Default | |
+|---|---|---|
+| `PHONEMIC_BUILD_GUI` | ON | the window (needs X11/GL headers on Linux) |
+| `PHONEMIC_BUILD_TOOLS` | ON | receiver + softphone |
+| `PHONEMIC_BUILD_TESTS` | ON | test suite |
+| `PHONEMIC_WITH_RNNOISE` | ON | Voice Focus noise removal |
+| `PHONEMIC_WITH_WEB` | ON | built-in browser mic (mbedTLS, QR code) |
 
-## Phone side (Android) — prerequisites not yet installed on this machine
+`cmake --preset headless` builds everything except the window.
 
-The native hot path (Oboe + libopus + JNI) and the Kotlin shell need:
+## Android app
 
-- **Android Studio** (or the standalone SDK command-line tools)
-- **Android SDK Platform 34** and **build-tools**
-- **Android NDK** (r26+) — compiles the C++ capture/encode code
-- **CMake 3.22+** (installable via the SDK Manager)
-- **JDK 17+** — the Java on this machine is 1.8, which modern Android Gradle
-  rejects. Install a newer JDK (Android Studio bundles one).
-- **`adb`** on `PATH` — to deploy to the phone and for the Phase 2 USB tunnel.
+Requirements: **Android Studio** (it bundles JDK 17), and in its SDK Manager
+**Android 14 (API 34)**, **NDK 26.1.10909125** and **CMake 3.22.1**.
 
-Once installed, create `phone-app/local.properties` with `sdk.dir=<path>` (or set
-`ANDROID_HOME`), then:
+- Android Studio: open `phone-app/` and press **Run ▶**.
+- Command line:
+  ```sh
+  cd phone-app
+  echo "sdk.dir=/path/to/Android/Sdk" > local.properties   # or set ANDROID_HOME
+  ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
+  adb install -r app/build/outputs/apk/release/app-release.apk
+  ```
+  Release builds are minified and, unless you add your own signing config, signed
+  with the debug key so they install directly.
 
-```sh
-cd phone-app
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
-```
+The native engine (`phone-app/native`) compiles `shared/` directly, so protocol
+and crypto are always identical to the desktop app's.
 
-### Native dependencies (fetched by the CMake build, not vendored)
-
-- **Oboe** — Google's low-latency audio library. Add via the `oboe` Prefab AAR
-  dependency, or `FetchContent` in CMake.
-- **libopus** — added in Phase 1. Phase 0 sends raw PCM16 and needs no codec.
-
-## Windows driver (Phase 4) — not started
-
-Will require the Windows Driver Kit (WDK) matching the installed Visual Studio,
-plus test-signing enabled (`bcdedit /set testsigning on`) on the dev machine.
-Production driver signing (EV cert / attestation signing) is a separate,
-later concern and is out of scope until the driver works under test-signing.
+## Driver (experimental)
+See [pc-app/driver/README.md](../pc-app/driver/README.md). It needs the WDK and
+is not part of the CMake build.
