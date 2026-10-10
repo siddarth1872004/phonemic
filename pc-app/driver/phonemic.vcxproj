@@ -69,7 +69,8 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(PhonemicAcxRoot)' != ''">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(PhonemicAcxRoot)\Include\$(PhonemicAcxSdkVersion)\km\acx\km\$(ACX_VERSION_MAJOR).$(ACX_VERSION_MINOR);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- ACX needs KMDF headers from the same WDK (older ones lack WDF_STRUCT_INFO). -->
+      <AdditionalIncludeDirectories>$(PhonemicAcxRoot)\Include\$(PhonemicAcxSdkVersion)\km\acx\km\$(ACX_VERSION_MAJOR).$(ACX_VERSION_MINOR);$(PhonemicAcxRoot)\Include\wdf\kmdf\$(KMDF_VERSION_MAJOR).$(KMDF_VERSION_MINOR);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <!-- A WDK without ACX support doesn't define these for us. -->
       <PreprocessorDefinitions>ACX_VERSION_MAJOR=$(ACX_VERSION_MAJOR);ACX_VERSION_MINOR=$(ACX_VERSION_MINOR);%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
