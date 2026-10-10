@@ -1,17 +1,18 @@
-# Rust
-/target
-**/target
-Cargo.lock.bak
+# CMake builds
+/build*/
+/out/
+CMakeUserPresets.json
 
 # Android
 phone-app/.gradle/
 phone-app/build/
 phone-app/app/build/
 phone-app/local.properties
-phone-app/.cxx/
+**/.cxx/
 *.apk
 *.aab
 *.keystore
+*.jks
 
 # WDK / driver build
 pc-app/driver/**/x64/
@@ -25,10 +26,7 @@ pc-app/driver/**/Release/
 # IDE / OS
 .idea/
 .vs/
+.vscode/
 *.user
 .DS_Store
 Thumbs.db
-
-# Android native build intermediates (any level)
-**/.cxx/
-phone-app/app/build/

@@ -16,19 +16,23 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="🎙  PhoneMic"
+            android:layout_marginTop="16dp"
+            android:drawablePadding="10dp"
+            android:gravity="center_vertical"
+            android:text="@string/app_name"
             android:textColor="@color/text"
             android:textSize="26sp"
             android:textStyle="bold"
-            android:layout_marginTop="16dp" />
+            app:drawableStartCompat="@drawable/ic_mic"
+            app:drawableTint="@color/accent" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="use this phone as your PC microphone"
+            android:layout_marginBottom="20dp"
+            android:text="@string/tagline"
             android:textColor="@color/muted"
-            android:textSize="13sp"
-            android:layout_marginBottom="20dp" />
+            android:textSize="13sp" />
 
         <!-- Connection card -->
         <com.google.android.material.card.MaterialCardView
@@ -36,7 +40,8 @@
             android:layout_height="wrap_content"
             app:cardBackgroundColor="@color/card"
             app:cardCornerRadius="18dp"
-            app:cardElevation="0dp">
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -47,24 +52,31 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="PC ADDRESS"
+                    android:layout_marginBottom="8dp"
+                    android:letterSpacing="0.08"
+                    android:text="@string/pc_address"
                     android:textColor="@color/muted"
                     android:textSize="11sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.08"
-                    android:layout_marginBottom="8dp" />
+                    android:textStyle="bold" />
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/ipLayout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:hint="IP shown in the PC app">
+                    android:hint="@string/hint_pc_ip"
+                    app:endIconContentDescription="@string/find_pc"
+                    app:endIconDrawable="@drawable/ic_search"
+                    app:endIconMode="custom"
+                    app:endIconTint="@color/accent">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/ipInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text"
+                        android:digits="0123456789.:"
+                        android:imeOptions="actionDone"
+                        android:inputType="number"
                         android:textColor="@color/text"
                         android:textSize="18sp" />
                 </com.google.android.material.textfield.TextInputLayout>
@@ -73,39 +85,65 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:hint="Security PIN (optional, must match PC)"
-                    android:layout_marginTop="8dp">
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/hint_pin"
+                    app:endIconMode="password_toggle">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/pinInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="number"
+                        android:inputType="textPassword"
+                        android:maxLength="128"
                         android:textColor="@color/text"
                         android:textSize="16sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <TextView
-                    android:id="@+id/statusText"
-                    android:layout_width="wrap_content"
+                <LinearLayout
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="● Not connected"
-                    android:textColor="@color/muted"
-                    android:textSize="13sp"
-                    android:layout_marginTop="4dp" />
+                    android:layout_marginTop="10dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <View
+                        android:id="@+id/statusDot"
+                        android:layout_width="10dp"
+                        android:layout_height="10dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/dot"
+                        android:backgroundTint="@color/muted" />
+
+                    <TextView
+                        android:id="@+id/statusText"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/status_idle"
+                        android:textColor="@color/muted"
+                        android:textSize="14sp" />
+                </LinearLayout>
 
                 <com.google.android.material.progressindicator.LinearProgressIndicator
                     android:id="@+id/levelBar"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    app:trackCornerRadius="8dp"
-                    app:trackThickness="10dp"
+                    android:max="100"
+                    android:progress="0"
                     app:indicatorColor="@color/accent"
                     app:trackColor="@color/accent_dim"
-                    android:max="100"
-                    android:progress="0" />
+                    app:trackCornerRadius="8dp"
+                    app:trackThickness="10dp" />
 
+                <TextView
+                    android:id="@+id/statsText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFeatureSettings="tnum"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -116,13 +154,14 @@
             android:layout_marginTop="16dp"
             app:cardBackgroundColor="@color/card"
             app:cardCornerRadius="18dp"
-            app:cardElevation="0dp">
+            app:cardElevation="0dp"
+            app:strokeWidth="0dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
                 android:gravity="center_vertical"
+                android:orientation="horizontal"
                 android:padding="20dp">
 
                 <LinearLayout
@@ -134,7 +173,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Voice Focus"
+                        android:text="@string/voice_focus"
                         android:textColor="@color/text"
                         android:textSize="17sp"
                         android:textStyle="bold" />
@@ -142,7 +181,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Clean up your voice — cut noise &amp; echo"
+                        android:text="@string/voice_focus_desc"
                         android:textColor="@color/muted"
                         android:textSize="13sp" />
                 </LinearLayout>
@@ -161,30 +200,42 @@
             android:layout_width="match_parent"
             android:layout_height="60dp"
             android:layout_marginTop="24dp"
-            android:text="Start"
+            android:text="@string/start"
             android:textSize="18sp"
             android:textStyle="bold"
-            app:cornerRadius="30dp"
-            app:backgroundTint="@color/accent" />
+            app:backgroundTint="@color/accent"
+            app:cornerRadius="30dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/muteButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="10dp"
+            android:text="@string/mute"
+            android:textSize="16sp"
+            android:visibility="gone"
+            app:backgroundTint="@color/control"
+            app:cornerRadius="26dp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Streaming keeps running in the background — you can lock the screen."
-            android:textColor="@color/muted"
-            android:textSize="12sp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="16dp" />
+            android:layout_marginTop="16dp"
+            android:gravity="center"
+            android:text="@string/background_hint"
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
 
         <TextView
+            android:id="@+id/versionText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="PhoneMic v0.2.0"
-            android:textColor="@color/muted"
-            android:textSize="11sp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="8dp"
             android:alpha="0.6"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="8dp" />
+            android:textColor="@color/muted"
+            android:textSize="11sp" />
 
     </LinearLayout>
 </ScrollView>

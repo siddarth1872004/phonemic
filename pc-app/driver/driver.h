@@ -1,82 +1,96 @@
 /*++
 PhoneMic virtual audio capture driver — shared declarations.
 
-Structured after Microsoft's ACX `sysvad` sample: a WDF driver that publishes an
-ACX circuit exposing a single **capture** endpoint. The capture stream is fed
-from the shared-memory ring (../ipc/ring.h) that the user-mode core fills with
-PCM received from the phone.
+A WDF + ACX (Audio Class eXtensions) driver, structured after Microsoft's ACX
+samples, that publishes one capture circuit: a streaming pin plus a
+"microphone" bridge pin. The capture stream is fed from the shared-memory ring
+(../ipc/ring.h) that the PhoneMic desktop app fills (phonemic-receiver --driver).
 
-STATUS: source is code-complete against the ACX model but has NOT been compiled
-— it requires the WDK (see BUILDING notes in README.md) which is not installed
-in the development environment. Treat signatures as reviewed-but-unverified until
-built against a real WDK.
+STATUS: experimental and NOT yet compiled — there is no WDK in the project's
+CI. The structure follows the ACX RT-stream model; expect to adjust details to
+your WDK's acx.h when building (see README.md).
 --*/
 #pragma once
 
 #include <ntddk.h>
 #include <wdf.h>
 #include <acx.h>
+#include <ks.h>
+#include <ksmedia.h>
 
 #include "..\ipc\ring.h"
 
-// Stable component identity for the capture circuit. Regenerate with guidgen if
-// forking; keep it constant across releases so the endpoint identity is stable.
+#define PHONEMIC_POOL_TAG 'cMhP'
+
+// Stable component identity for the capture circuit. Keep it constant across
+// releases so Windows keeps the endpoint's identity (and the user's settings).
 // {8F3A1C6E-2B4D-4E9A-9C1F-7A2E5D6B0011}
 DEFINE_GUID(PHONEMIC_CIRCUIT_COMPONENT_GUID,
     0x8f3a1c6e, 0x2b4d, 0x4e9a, 0x9c, 0x1f, 0x7a, 0x2e, 0x5d, 0x6b, 0x00, 0x11);
 
-// Format we expose: 48 kHz, mono, 16-bit PCM — matching the wire format so no
-// resampling happens anywhere in the pipeline.
-#define PHONEMIC_SAMPLE_RATE   48000
-#define PHONEMIC_CHANNELS      1
+// Exposed format: 48 kHz, mono, 16-bit PCM — the ring's format, so nothing is
+// resampled in the kernel.
 #define PHONEMIC_BITS_PER_SAMPLE 16
+#define PHONEMIC_BLOCK_ALIGN     (PHONEMIC_CHANNELS * PHONEMIC_BITS_PER_SAMPLE / 8)
 
-// The user-mode core creates a named section at this path and fills it with
-// PCM; the driver maps it read-only on stream start. A well-known name avoids
-// handle duplication — the "establishing IOCTL" degenerates to this contract.
+// The desktop app creates Global\PhonemicRing; the driver opens it by name.
 #define PHONEMIC_RING_SECTION_NAME L"\\BaseNamedObjects\\PhonemicRing"
 
-// 10 ms of audio per RT packet, and a small ring of packets for the capture RT
-// model. Frame size must match the user-mode producer's cadence.
-#define PHONEMIC_PACKET_SAMPLES  (PHONEMIC_SAMPLE_RATE / 100)   // 480
-#define PHONEMIC_PACKET_BYTES    (PHONEMIC_PACKET_SAMPLES * sizeof(INT16))
-#define PHONEMIC_PACKET_COUNT    4
+#define PHONEMIC_MAX_PACKETS 8
 
-// Per-device context.
 typedef struct _PHONEMIC_DEVICE_CONTEXT {
-    ACXCIRCUIT  Circuit;        // the capture circuit we publish
+    ACXCIRCUIT Circuit;
 } PHONEMIC_DEVICE_CONTEXT, *PPHONEMIC_DEVICE_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PHONEMIC_DEVICE_CONTEXT, PhonemicDeviceGetContext)
 
-// Per-stream context: owns the ring mapping and the RT packet pump.
+// Per-stream state. Fields touched by the DISPATCH_LEVEL pump live in
+// non-paged memory (WDF contexts are non-paged); the shared ring is mapped into
+// SYSTEM space and its pages are locked, so the pump can read it at DISPATCH.
 typedef struct _PHONEMIC_STREAM_CONTEXT {
-    PPHONEMIC_DEVICE_CONTEXT Device;
-
-    // Mapped shared ring (produced by user mode).
+    // Shared ring (produced by user mode). NULL until the app is running.
     HANDLE          SectionHandle;
-    PVOID           RingBase;       // mapped view; cast to PHONEMIC_RING*
+    PVOID           SectionObject;
+    PVOID           RingView;       // system-space view
+    PMDL            RingMdl;        // locks the view's pages
     PHONEMIC_RING*  Ring;
+    ULONGLONG       RingReadIndex;  // our consumer cursor
+    LONG            MapPending;     // a map work item is queued
+    ULONGLONG       LastMapAttempt; // interrupt time (100 ns) of the last try
+    WDFWORKITEM     MapWorkItem;
 
-    // ACX RT capture packets the audio stack reads from.
-    PVOID           Packets[PHONEMIC_PACKET_COUNT];
-    ULONG           CurrentPacket;  // index of the last completed packet
-    ULONGLONG       RingReadIndex;  // our consumer cursor into Ring->samples
+    // RT packets handed to the audio stack (non-paged, from MmAllocatePagesForMdlEx).
+    ULONG           PacketCount;
+    ULONG           PacketSize;     // bytes
+    ULONG           SamplesPerPacket;
+    PMDL            PacketMdl[PHONEMIC_MAX_PACKETS];
+    PVOID           PacketVa[PHONEMIC_MAX_PACKETS];
 
-    // Timer that copies one packet's worth of samples every 10 ms.
+    // Pump: one packet per tick, re-armed on an absolute schedule (no drift).
     WDFTIMER        PumpTimer;
     BOOLEAN         Running;
+    ULONGLONG       StartTime;          // system time (100 ns) at Run
+    volatile LONG64 PacketsCompleted;   // monotonic packet number
+    volatile LONG64 LastPacketQpc;
 } PHONEMIC_STREAM_CONTEXT, *PPHONEMIC_STREAM_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PHONEMIC_STREAM_CONTEXT, PhonemicStreamGetContext)
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD PhonemicEvtDeviceAdd;
 EVT_ACX_CIRCUIT_CREATE_STREAM PhonemicEvtCircuitCreateStream;
+
 EVT_ACX_STREAM_PREPARE_HARDWARE PhonemicEvtStreamPrepare;
+EVT_ACX_STREAM_RELEASE_HARDWARE PhonemicEvtStreamRelease;
 EVT_ACX_STREAM_RUN PhonemicEvtStreamRun;
 EVT_ACX_STREAM_PAUSE PhonemicEvtStreamPause;
+EVT_ACX_STREAM_GET_HW_LATENCY PhonemicEvtStreamGetHwLatency;
+EVT_ACX_STREAM_ALLOCATE_RTPACKETS PhonemicEvtStreamAllocateRtPackets;
+EVT_ACX_STREAM_FREE_RTPACKETS PhonemicEvtStreamFreeRtPackets;
 EVT_ACX_STREAM_GET_CAPTURE_PACKET PhonemicEvtStreamGetCapturePacket;
+EVT_ACX_STREAM_GET_PRESENTATION_POSITION PhonemicEvtStreamGetPresentationPosition;
+EVT_WDF_OBJECT_CONTEXT_CLEANUP PhonemicEvtStreamCleanup;
 EVT_WDF_TIMER PhonemicEvtPumpTimer;
+EVT_WDF_WORKITEM PhonemicEvtMapWorkItem;
 
-NTSTATUS PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device);
-NTSTATUS PhonemicMapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Stream);
-VOID     PhonemicUnmapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Stream);
+NTSTATUS PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device, _Out_ ACXCIRCUIT* Circuit);
+NTSTATUS PhonemicMapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Ctx);
+VOID     PhonemicUnmapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Ctx);

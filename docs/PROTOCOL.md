@@ -1,63 +1,107 @@
-# PhoneMic wire protocol
+# PhoneMic wire protocol (v2)
 
-This document is the human-readable companion to the `phonemic-protocol` crate
-(`/protocol`). **The crate is the source of truth.** If they ever disagree, the
-code wins and this file is the bug.
+The source of truth is [`shared/include/phonemic/wire.h`](../shared/include/phonemic/wire.h)
+(framing) and [`crypto.h`](../shared/include/phonemic/crypto.h) (encryption). Both
+are compiled unchanged into the Android engine and the desktop app; the browser
+client (`web-client/app.js`) follows the same layout and is tested against the
+real server. If this document and the headers disagree, the headers win.
 
-## Framing
+## Transport
 
-Every UDP datagram (Phases 0–2) and every RFCOMM frame (Phase 3) is a fixed
-18-byte header followed by `payload_len` bytes of audio.
+- Native app → PC: **UDP**, default port **4010**. One datagram = one packet.
+- Browser → PC: **WebSocket over TLS** (`wss://<pc>:8443/ws?t=<pairing code>`),
+  one binary message = one AUDIO packet (no encryption flag: TLS covers it).
+
+All multi-byte integers are **little-endian** (both target CPUs are LE; the
+encoders are byte-wise, so they are correct anywhere). `magic` 0x4D50 puts the
+ASCII bytes `"PM"` first on the wire.
+
+## Common prefix (4 bytes)
 
 ```
-offset  size  field         type   notes
-  0      2    magic         u16    protocol id, "PM". Reject anything else.
-  2      1    version       u8     protocol version (currently 1)
-  3      1    codec         u8     0 = PCM16, 1 = Opus
-  4      4    seq           u32    monotonic sequence number
-  8      8    timestamp_us  u64    capture time (microseconds), phone clock
- 16      2    payload_len   u16    number of payload bytes that follow
- 18    ...    payload              payload_len bytes of (encoded) audio
+off size field
+ 0   2   magic    0x4D50 ("PM")
+ 2   1   version  2   (1 = legacy, see below)
+ 3   1   kind     0 AUDIO, 1 HELLO, 2 ANNOUNCE, 3 STATUS
 ```
 
-Constants: `MAGIC = 0x4D50` ("PM"), `PROTOCOL_VERSION = 1`, `HEADER_LEN = 18`.
+## AUDIO (phone → PC), 28-byte header
 
-## Endianness
+```
+ 4   1   codec         0 = PCM16 (1 = Opus, reserved)
+ 5   1   flags         bit0 = encrypted; other bits must be 0
+ 6   2   payload_len   bytes after the header (incl. 16-byte tag if encrypted)
+ 8   4   session_id    random per stream start, never 0
+12   4   seq           per session, from 0
+16   8   timestamp_us  sender media clock: capture start + samples_sent / rate
+24   4   sample_rate   8000..96000 Hz (the PC resamples to 48 kHz)
+28  ...  payload       mono PCM16 LE, normally 10 ms (480 samples at 48 kHz)
+```
 
-All multi-byte integers are **little-endian**, including `magic`. Both target
-CPUs — ARM on the phone, x86-64 on the PC — are little-endian, so this is a
-zero-cost choice with no byte swapping on the hot path. This deliberately breaks
-the "network byte order" (big-endian) convention; it is documented here and in
-the crate so it never becomes a silent surprise.
+`decode` is total: length ≥ 28, magic, version, kind, codec, flags, session ≠ 0,
+rate in range, and `payload_len` must *exactly* equal the bytes present
+(truncation and trailing garbage are both rejected). It never reads out of
+bounds (fuzzed in `pc-app/tests/test_wire.cpp`).
 
-`magic` little-endian `0x4D50` places bytes `0x50 0x4D` = ASCII `"PM"` first on
-the wire, which is convenient when eyeballing a packet capture.
+## Discovery
 
-## Payload
+**HELLO** (phone → `255.255.255.255:4010` and the subnet broadcast), 12 bytes:
+`nonce u32`, `reserved u32 = 0`.
 
-- **PCM16 (codec 0):** raw signed 16-bit samples, little-endian, mono, 48 kHz.
-  Used in Phase 0 only. Payload length must be even (whole samples).
-- **Opus (codec 1):** one Opus frame. Introduced in Phase 1 for its low frame
-  latency (2.5–20 ms) and packet-loss concealment. Recommended frame size:
-  10 ms (480 samples @ 48 kHz) as the latency/robustness starting point.
+**ANNOUNCE** (PC → phone, unicast), 12 + n bytes:
+`nonce u32` (copied from HELLO), `audio_port u16`, `flags u8`
+(bit0 PIN required, bit1 busy), `name_len u8` (≤ 63), `name` (UTF-8 host name).
+The PC answers at most 10 HELLOs per second.
 
-## Design rules
+## STATUS (PC → phone, about 2 Hz), 24 bytes
 
-- **Loss tolerance, not retransmit.** This is a real-time stream. A missing
-  `seq` triggers Opus packet-loss concealment on the PC, never a retransmit
-  request. There is no ACK.
-- **Jitter buffer (PC side, Phase 1).** A small ring reorders by `seq` /
-  `timestamp_us` and smooths network jitter before the decoder. Target depth is
-  configurable, starting at 2–3 frames.
-- **Versioning.** `version` lets the protocol evolve without silently
-  mis-parsing an old client. A receiver rejects unsupported versions
-  (`ProtocolError::UnsupportedVersion`) rather than crashing; a future version
-  can add a renegotiation handshake. Decoding is total: every malformed or
-  truncated datagram maps to a `ProtocolError` variant and is dropped, never
-  panics, never allocates.
+```
+ 4   1   state       0 ok, 1 PIN required, 2 PIN missing on PC, 3 PIN wrong,
+                     4 busy (another device streaming), 5 unsupported format
+ 5   1   reserved
+ 6   2   buffer_ms   PC playout latency
+ 8   4   session_id  the session the report is about
+12   4   received    AUDIO packets accepted this session
+16   4   lost        packets concealed this session
+20   4   reserved
+```
 
-## Validation performed by `decode`
+Sent every 500 ms to the active sender, and (rate-limited) to any sender whose
+packets are rejected, so the phone can say *why*. The phone's socket is
+`connect()`ed to the PC, so it only ever reads the PC's replies.
 
-In order: length ≥ 18 → magic matches → version supported → codec known →
-declared `payload_len` exactly equals the bytes present (trailing garbage and
-truncation both rejected). See the unit tests in `/protocol/src/lib.rs`.
+## Encryption (optional)
+
+```
+key   = Argon2id(passphrase, salt = "phonemic/v2/" || session_id LE,
+                 memory 4 MiB, 3 passes, 1 lane) → 32 bytes
+nonce = session_id(4) || seq(4) || timestamp_us(8) || 0(8)      (24 bytes)
+aad   = the 28-byte AUDIO header
+wire  = XChaCha20-Poly1305 ciphertext || 16-byte tag
+```
+
+- Per-session keys mean nonces can't repeat across restarts.
+- With a passphrase set on the PC, **unencrypted UDP audio is refused**.
+- Argon2id makes each guess expensive, but a short numeric PIN is still
+  guessable offline from captured traffic. Use 8+ characters if secrecy matters.
+- The PC caches keys per session and derives at most 3 per second.
+
+Known-answer vectors from independent implementations (reference Argon2,
+libsodium) are pinned in `pc-app/tests/test_crypto.cpp`.
+
+## Session rules (receiver)
+
+- The first valid sender owns the microphone; other senders get STATUS *busy*
+  until the owner has been silent for 2 s.
+- A new `session_id` from the same phone (after the 2 s timeout) starts a fresh
+  session: the jitter buffer, resampler and playout buffer are reset.
+- Packets go through a jitter buffer that tolerates reordering by 2 packets,
+  then through loss concealment, then through the adaptive playout buffer that
+  compensates clock drift.
+
+## Legacy v1
+
+v0.2 phones sent an 18-byte header: `magic, version=1, codec|0x80 (encrypted),
+seq u32, timestamp u64, payload_len u16`. The PC still accepts **unencrypted** v1
+audio (assumed 48 kHz) so an old phone keeps working. Encrypted v1 is refused
+(its key derivation was weak) and the UI asks you to update the phone app.

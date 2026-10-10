@@ -2,18 +2,17 @@
 
 # 🎙️ PhoneMic
 
-**Turn your Android phone into a real wireless microphone for your Windows or Linux PC.**
+**Turn your phone into a real wireless microphone for your PC.**
 
-No hardware. No subscriptions. Native code end-to-end — Rust + C++ on the hot path, zero Electron.
+No extra hardware, no subscription, no Electron. Native code end to end: a C++ desktop app and a C++/Oboe Android engine that share one protocol implementation.
 
-![Platform](https://img.shields.io/badge/PC-Windows%20%7C%20Linux-0078D4?logo=windows&logoColor=white)
-![Platform](https://img.shields.io/badge/Phone-Android%2010%2B-3DDC84?logo=android&logoColor=white)
+![Platform](https://img.shields.io/badge/PC-Windows%20%7C%20Linux%20%7C%20macOS*-0078D4)
+![Platform](https://img.shields.io/badge/Phone-Android%2010%2B%20%7C%20any%20browser-3DDC84)
 ![CI](https://github.com/siddarth1872004/phonemic/actions/workflows/build.yml/badge.svg)
-![Rust](https://img.shields.io/badge/PC%20app-Rust-orange?logo=rust)
-![C++](https://img.shields.io/badge/Audio%20engine-C%2B%2B%20%2F%20Oboe-blue)
+![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
 ![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-green)
 
-*Speak into your phone → it shows up as a microphone in Discord, Zoom, OBS, Teams — any desktop app.*
+*Speak into your phone and it shows up as a microphone in Discord, Zoom, OBS, Teams, or any other desktop app.*
 
 </div>
 
@@ -23,101 +22,103 @@ No hardware. No subscriptions. Native code end-to-end — Rust + C++ on the hot 
 
 | | |
 |---|---|
-| 🚀 **Low latency** | Raw UDP + 10 ms audio frames + lock-free buffers. Tuned end-to-end for real-time voice. |
-| 🎭 **Voice changer** | Live presets — **Deep**, **Chipmunk**, **Robot** — switchable mid-call. Hand-written DSP, pitch-shift verified by unit tests. |
-| 🧹 **Voice Focus** | Two-stage noise removal: the phone's hardware noise suppressor + echo canceller, then RNNoise on the PC. Kills fans, keyboards, room hiss. |
-| 🔒 **Encrypted option** | Type the same PIN on both ends → XChaCha20-Poly1305 end-to-end encryption. Leave it blank for zero-config LAN use. |
-| 📵 **Runs in background** | Foreground service on the phone — lock the screen, keep talking. |
-| 🎚️ **Live level meters** | On both the phone and the PC, so you always know audio is flowing. |
-| 🛠️ **One-click mic setup** | The PC app downloads and launches the VB-CABLE virtual-microphone installer for you. |
-| 🩺 **Self-diagnosing** | The status line tells you *why* when something isn't connected (wrong PIN, stale app, network path) instead of leaving you guessing. |
+| 🔎 **Zero typing** | The phone app finds your PC on the Wi-Fi by itself ("Find my PC"). |
+| 🌐 **No app needed** | Or scan the QR code in the PC window: the phone's **browser** becomes the mic (Android and iPhone). |
+| 🚀 **Low latency** | 10 ms UDP frames, a lock-free audio path, a Wi-Fi low-latency lock on the phone, and a selectable buffer (20–150 ms). |
+| 🎚️ **Glitch-free over time** | Adaptive playout absorbs phone/PC clock drift (no creeping delay, no periodic clicks). The jitter buffer handles reordering and loss concealment. |
+| 🧹 **Voice Focus** | The phone's noise suppressor and echo canceller, then RNNoise on the PC. Removes fans, keyboards and room hiss. |
+| 🎭 **Voice changer** | Deep, Chipmunk, Robot, Radio, Echo; switch mid-call. |
+| 🔊 **Volume and mute** | Gain up to +18 dB with a limiter that can't clip, plus mute from the PC, the phone, or the phone's notification. |
+| 🔒 **Encryption** | Same PIN or passphrase on both ends gives XChaCha20-Poly1305 with Argon2id keys. With a PIN set, unauthenticated audio is refused. |
+| 🩺 **Tells you what's wrong** | The PC reports back to the phone: *connected / wrong PIN / PIN required / PC busy / not running / no network*. |
+| 🎧 **Hear yourself** | "Listen on this PC" monitors on any output while the mic keeps feeding your apps. |
+| 🛠️ **One-click mic setup** | Windows: downloads and signature-checks VB-CABLE. Linux: creates a PulseAudio/PipeWire virtual mic automatically. |
 
 ## 🚀 Quick start
 
 ### 1 · PC
 
-Grab a prebuilt binary from [**Releases**](https://github.com/siddarth1872004/phonemic/releases) (`PhoneMic.exe` for Windows, `PhoneMic-linux` for Linux), or build it:
+Download from [**Releases**](https://github.com/siddarth1872004/phonemic/releases): `PhoneMic.exe` (Windows) or `PhoneMic-linux-x64.tar.gz`. Or build it:
 
 ```sh
-git clone https://github.com/siddarth1872004/phonemic
-cd phonemic
-# Linux: sudo apt install libasound2-dev   (Debian/Ubuntu; alsa-lib-devel on Fedora, alsa-lib on Arch)
-cargo run --release -p phonemic-gui       # Windows needs MinGW binutils — see docs/BUILDING.md
+git clone https://github.com/siddarth1872004/phonemic && cd phonemic
+cmake --preset release && cmake --build --preset release     # see docs/BUILDING.md
+./build/bin/PhoneMic                                          # Windows: build\bin\Release\PhoneMic.exe
 ```
-The window shows **your PC's IP address**.
 
-### 2 · Phone
-Build `phone-app/` with Android Studio (open → Run ▶), or install a prebuilt `PhoneMic.apk` if you have one. Open the app, type the IP from the PC window, tap **Start**, allow the microphone.
+### 2 · Phone (pick one)
 
-### 3 · Make it a real microphone
+- **Android app** (best latency, works with the screen off): install `PhoneMic.apk` from Releases, or build `phone-app/` in Android Studio. Tap **🔍 Find my PC**, then **Start**.
+- **Any phone's browser**: tick **Browser mic** in the PC window, scan the QR code, then tap *Advanced → Proceed* once (it's the PC's own certificate) and **Start mic**.
 
-**Windows** — click **⚙ Set up microphone** in the app (one-time, installs the free VB-CABLE driver, reboot), then in Discord / Zoom / OBS pick:
-> 🎙 **CABLE Output (VB-Audio Virtual Cable)**
+### 3 · Use it as a microphone
 
-**Linux** — nothing to install: PhoneMic creates a PulseAudio/PipeWire virtual source automatically at startup (needs `pactl`, preinstalled on most distros). Pick:
-> 🎙 **PhoneMic Microphone**
+| OS | One-time setup | Pick this mic in your apps |
+|---|---|---|
+| **Windows** | Click **Set up microphone (VB-CABLE)** in the app, then reboot | `CABLE Output (VB-Audio Virtual Cable)` |
+| **Linux** | Nothing (needs `pactl`, which PulseAudio and PipeWire systems have) | `PhoneMic Microphone` |
+| **macOS*** | `brew install blackhole-2ch` | `BlackHole 2ch` |
 
-Done. Your phone is now your mic — Voice Focus, voice changer and all.
+<sub>* macOS builds in CI but is experimental.</sub>
 
 ## 🏗️ How it works
 
 ```
- 📱 Android phone                             🖥️ Windows PC
- ┌───────────────────────────┐               ┌──────────────────────────────────┐
- │ Oboe capture (C++, 48 kHz)│               │ UDP receive (Rust)               │
- │  → hardware noise/echo fx │   Wi-Fi UDP   │  → decrypt (XChaCha20, optional) │
- │  → XChaCha20 encrypt (opt)│ ────────────► │  → RNNoise Voice Focus (opt)     │
- │  → 18-byte framed packets │  10ms frames  │  → voice changer DSP (opt)       │
- │    (Kotlin = UI only)     │               │  → VB-CABLE ➜ appears as a mic   │
- └───────────────────────────┘               └──────────────────────────────────┘
+ 📱 Android (C++ / Oboe)                          🖥️ PhoneMic desktop app (C++)
+ ┌──────────────────────────────┐   Wi-Fi UDP   ┌───────────────────────────────────────────┐
+ │ mic → lock-free ring          │ ────────────► │ decode (shared wire.h) → auth / decrypt   │
+ │ sender thread: 10 ms frames,  │  10 ms frames │ → jitter buffer → resample → conceal loss │
+ │ wire.h framing, XChaCha20 opt │ ◄──────────── │ → RNNoise → voice FX → gain/limiter       │
+ └──────────────────────────────┘  STATUS 2 Hz  │ → adaptive playout (drift) → virtual mic  │
+ 🌐 any browser ── HTTPS/WebSocket (pairing code) ─►  same pipeline                         │
+                                                 └───────────────────────────────────────────┘
 ```
 
-**Principle #1: the hot path is native.** Audio buffers are only ever touched by C++ (phone) and Rust (PC). Kotlin does UI, permissions and lifecycle — never samples.
+**The hot path is native.** Kotlin does the UI, permissions and lifecycle; it never touches audio. The realtime callbacks on both ends never lock, allocate, or make system calls.
 
-The wire protocol is a single `no_std` Rust crate ([`protocol/`](protocol/)) with the C mirror ([`wire.h`](phone-app/native/wire.h)) **cross-checked byte-for-byte against it in CI-able host tests** — same for the encryption (monocypher ↔ RustCrypto interop test). See [docs/PROTOCOL.md](docs/PROTOCOL.md).
+**One protocol implementation.** [`shared/include/phonemic/wire.h`](shared/include/phonemic/wire.h) and [`crypto.h`](shared/include/phonemic/crypto.h) are compiled unchanged into the Android engine *and* the desktop app. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 ## 📁 Repository layout
 
 | Path | What it is |
 |---|---|
-| [`protocol/`](protocol/) | Shared `no_std` wire format — framing, versioning, encrypted flag. 14 tests. |
-| [`pc-app/gui/`](pc-app/gui/) | **The desktop app** — Windows + Linux (Rust + egui, single small binary). |
-| [`pc-app/core/`](pc-app/core/) | Transports, jitter buffer, RNNoise, voice-changer DSP, crypto. 30+ tests. |
-| [`pc-app/web-gateway/`](pc-app/web-gateway/) | Optional browser-based phone client (no APK needed). |
-| [`pc-app/driver/`](pc-app/driver/) + [`ipc/`](pc-app/ipc/) | Future native ACX virtual-mic driver (code-complete, needs WDK). |
-| [`phone-app/`](phone-app/) | **The Android app** — Kotlin UI + C++/Oboe audio engine. |
-| [`docs/`](docs/) | Protocol spec, architecture, build guides. |
+| [`shared/`](shared/) | The wire protocol and encryption (C99 headers + monocypher), used by phone and PC. |
+| [`pc-app/core/`](pc-app/core/) | Desktop engine: receiver pipeline, jitter buffer, adaptive playout, RNNoise, voice FX, audio devices, virtual mic, browser-mic server. |
+| [`pc-app/gui/`](pc-app/gui/) | **The desktop app**: Dear ImGui + GLFW, one small native binary. |
+| [`pc-app/tools/`](pc-app/tools/) | `phonemic-receiver` (headless) and `phonemic-softphone` (phone emulator for testing). |
+| [`pc-app/tests/`](pc-app/tests/) | 92 unit and integration tests (protocol fuzzing, crypto known-answer vectors, drift simulation, end-to-end UDP and TLS). |
+| [`pc-app/ipc/`](pc-app/ipc/) + [`pc-app/driver/`](pc-app/driver/) | Experimental ACX virtual-mic driver to replace VB-CABLE (needs the WDK). |
+| [`phone-app/`](phone-app/) | **The Android app**: Kotlin UI + C++/Oboe engine. |
+| [`web-client/`](web-client/) | The browser mic page (embedded into the desktop app at build time). |
+| [`docs/`](docs/) | Protocol, architecture, building, testing, and the [v0.2 → v0.3 audit](docs/AUDIT.md). |
 
-## 🧪 Tests & verification
+## 🧪 Tests
 
 ```sh
-cargo test            # protocol framing, jitter buffer, DSP, crypto — all green
+ctest --test-dir build --output-on-failure
 ```
-Cross-implementation checks run on the host, no device needed:
-- C++ `wire.h` framing → decoded by the Rust `protocol` crate ✅
-- monocypher (phone crypto) → decrypted by RustCrypto (PC crypto) ✅
-- Pitch shifter output frequency measured against target ratios ✅
+
+CI runs the suite on Linux, Windows (MSVC) and macOS, plus an ASan/UBSan build, and builds the Android app with lint. Highlights:
+
+- the protocol decoder is fuzzed and never reads out of bounds;
+- crypto is pinned to known-answer vectors from *independent* implementations (reference Argon2, libsodium);
+- the playout buffer holds latency against ±300 ppm clock drift over 3 simulated minutes;
+- end-to-end tests over real UDP (discovery, status feedback, PIN rejection) and real TLS (page, pairing code, WebSocket audio).
+
+The browser client was also checked against the real server in headless Chromium with a fake microphone.
 
 ## 🗺️ Roadmap
 
-- [x] Wi-Fi transport, framed UDP, jitter buffer
-- [x] Voice Focus (RNNoise + Android hardware fx)
-- [x] Voice changer (pitch / robot)
-- [x] Optional end-to-end encryption (PIN)
-- [x] Browser client fallback (web gateway)
-- [x] Linux support (PulseAudio/PipeWire virtual mic — no driver needed)
-- [x] CI builds for Windows + Linux on every push
-- [ ] Opus codec (packet-loss concealment, lower bandwidth)
-- [ ] USB transport (`adb` tunnel) · Bluetooth RFCOMM
-- [ ] Native ACX virtual-mic driver (drop VB-CABLE; WDK required)
-- [ ] mDNS auto-discovery (no IP typing at all)
+- [x] Wi-Fi UDP transport, jitter buffer, loss concealment, drift compensation
+- [x] Voice Focus, voice changer, gain/limiter, mute
+- [x] Encryption (Argon2id + XChaCha20-Poly1305), sender lock
+- [x] LAN auto-discovery and PC → phone status feedback
+- [x] Browser mic built into the app (QR code + pairing code)
+- [x] Windows, Linux, macOS (experimental) desktop builds; Android in CI
+- [ ] Opus codec (lower bandwidth, better concealment)
+- [ ] USB (`adb reverse`) and Bluetooth transports
+- [ ] Native ACX virtual-mic driver (code written, needs WDK build + signing)
 
 ## 📄 License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE) — pick whichever suits you.
-
----
-
-<div align="center">
-<sub>Built with Rust 🦀, C++ ⚙️ and an unreasonable dislike of Electron.</sub>
-</div>
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE). Third-party components are fetched at build time under their own licenses: monocypher (BSD-2/CC0), RNNoise (BSD-3), miniaudio (MIT-0/public domain), Dear ImGui (MIT), GLFW (zlib), Mbed TLS (Apache-2.0), QR Code generator (MIT).

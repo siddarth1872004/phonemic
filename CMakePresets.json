@@ -1,0 +1,31 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "headless",
+      "displayName": "Release without the window (servers / CI)",
+      "binaryDir": "${sourceDir}/build-headless",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "PHONEMIC_BUILD_GUI": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release", "configuration": "Release" },
+    { "name": "debug", "configurePreset": "debug", "configuration": "Debug" },
+    { "name": "headless", "configurePreset": "headless", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "release", "configurePreset": "release", "configuration": "Release", "output": { "outputOnFailure": true } }
+  ]
+}

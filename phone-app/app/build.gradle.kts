@@ -6,23 +6,23 @@ plugins {
 android {
     namespace = "com.phonemic"
     compileSdk = 34
+    // Pinned so every machine/CI builds the native code with the same toolchain.
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.phonemic"
         minSdk = 29          // Android 10: reliable low-latency AAudio via Oboe
         targetSdk = 34
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
-        // Only ship 64-bit ABIs; drop this list to add 32-bit if ever needed.
+        // 64-bit ABIs (all current phones) plus x86_64 for the emulator.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
 
         externalNativeBuild {
             cmake {
-                // C++17, and tell CMake we build a shared lib for JNI.
-                cppFlags += "-std=c++17"
                 // Oboe's prefab package is built against the shared C++ runtime,
                 // so we must match it (the NDK default is c++_static).
                 arguments += "-DANDROID_STL=c++_shared"
@@ -37,9 +37,9 @@ android {
         }
     }
 
-    // Oboe ships as a Prefab-enabled AAR; enable Prefab so CMake can find it.
     buildFeatures {
-        prefab = true
+        prefab = true       // Oboe ships as a Prefab AAR
+        buildConfig = true  // BuildConfig.VERSION_NAME for the UI
     }
 
     compileOptions {
@@ -52,8 +52,18 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Signed with the debug key unless you configure your own release key,
+            // so `assembleRelease` produces an installable APK out of the box.
+            signingConfig = signingConfigs.getByName("debug")
         }
+    }
+
+    lint {
+        abortOnError = true
+        warningsAsErrors = false
     }
 }
 
@@ -62,7 +72,6 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     // Material 3 components for the UI (cards, switches, buttons, meter).
     implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
 
     // Oboe: low-latency audio (AAudio/OpenSL ES). The audio hot path lives in
     // C++ against this; Kotlin never touches an audio buffer (principle #1).

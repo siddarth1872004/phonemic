@@ -1,51 +1,55 @@
 # PhoneMic — start here
 
-Use your Android phone as a microphone for this Windows PC. Plain steps, no jargon.
+Use your phone as a microphone for this PC. Plain steps, no jargon.
 
-You set this up **once**. After that it's: double-click, tap Start on the phone, done.
-
----
-
-## One-time setup (about 30–40 min, mostly downloads)
-
-### 1. Install VB-CABLE (makes your phone show up as a real mic)
-- Go to **vb-audio.com/Cable**, download **VB-CABLE**, unzip, right-click
-  `VBCABLE_Setup_x64.exe` → **Run as administrator** → Install.
-- **Reboot** the PC.
-
-*(Without this, PhoneMic still works but the sound just comes out your speakers
-instead of being usable as a mic in apps.)*
-
-### 2. Put the app on your phone (one time)
-- Install **Android Studio** (developer.android.com/studio) — pick the Standard
-  setup. In its **SDK Manager** add: **NDK 26.1.10909125** and **CMake 3.22.1**
-  (SDK Tools tab → tick "Show Package Details").
-- Open the repo's **`phone-app`** folder in Android Studio.
-- Plug your phone in with USB (enable **Developer Options → USB debugging** first:
-  tap "Build number" 7 times in Settings → About phone).
-- Press the green **Run ▶** button → pick your phone. It installs the PhoneMic app.
-
-*(Detailed version with troubleshooting: [docs/TIER2-3-HANDOFF.md](docs/TIER2-3-HANDOFF.md).)*
+You set this up **once**. After that: open PhoneMic on the PC, tap **Start** on the phone, done.
 
 ---
 
-## Every time you want to use it
+## One-time setup
 
-1. **Double-click `Start-PhoneMic.bat`** (in this folder). A window opens and
-   shows your PC's IP (something like `192.168.x.x`).
-2. On your **phone** (same Wi-Fi), open the **PhoneMic** app → type that **IP**,
-   tap **Start**, allow the mic.
-3. In **Discord / Zoom / OBS**, choose the microphone named
-   **"CABLE Output (VB-Audio Virtual Cable)"**.
+### 1. Get PhoneMic on the PC
+- **Windows:** download `PhoneMic.exe` from the project's **Releases** page and put it
+  anywhere (or next to `Start-PhoneMic.bat` in this folder). Double-click it.
+  - If Windows asks to allow PhoneMic through the firewall, click **Allow** (private networks).
+- **Linux:** download `PhoneMic-linux-x64.tar.gz` from Releases, unpack, run `./PhoneMic-linux`.
+  Or run `./start-phonemic.sh` in this folder to build it (see docs/BUILDING.md).
 
-That's it — your phone is now the mic. Close the black window to stop.
+### 2. Make it a real microphone
+- **Windows:** in the PhoneMic window click **Set up microphone (VB-CABLE)**, then
+  click **Install Driver** in the installer, then **reboot**.
+- **Linux:** nothing to do; PhoneMic creates "PhoneMic Microphone" automatically.
+
+### 3. Put the app on your phone (or skip it)
+- **Android:** install `PhoneMic.apk` from Releases (allow "install unknown apps" when asked).
+- **No app / iPhone:** tick **Browser mic** in the PC window and scan the QR code
+  with the phone's camera. The first time, the browser warns the connection
+  isn't private (it's your own PC's certificate): tap **Advanced → Proceed**.
+
+---
+
+## Every time you use it
+
+1. Open **PhoneMic** on the PC.
+2. On the phone (same Wi-Fi), open **PhoneMic**, tap the **🔍 search icon** to find the
+   PC (or type the address shown in the PC window), then tap **Start**.
+3. In **Discord / Zoom / OBS**, choose the microphone:
+   - Windows: **CABLE Output (VB-Audio Virtual Cable)**
+   - Linux: **PhoneMic Microphone**
+
+The phone keeps streaming with the screen off. Stop it from the app or the notification.
 
 ---
 
 ## If something's off
-- **App says it can't connect:** phone must be on the **same Wi-Fi** (not mobile
-  data), and Windows may ask to allow the app through the firewall the first
-  time — click **Allow**.
-- **No "CABLE Output" in Discord's mic list:** VB-CABLE didn't install / needs a
-  reboot. Redo step 1.
-- **The black window shows "VB-CABLE isn't installed":** same — do step 1.
+
+The phone and the PC both tell you what's wrong. The most common cases:
+
+| You see | Do this |
+|---|---|
+| Phone: *"Sending, but the PC isn't answering"* | Check the address. Allow PhoneMic through the PC's firewall (Windows Defender Firewall → Allow an app). Some guest/public Wi-Fi blocks devices from talking to each other. |
+| Phone: *"No PC found"* | Make sure PhoneMic is open on the PC and both are on the same Wi-Fi; or type the address shown on the PC. |
+| Phone: *"The PIN doesn't match"* | Type the same PIN on both. (A PIN is optional; leave both empty if you don't need encryption.) |
+| PC: *"PhoneMic is already running"* | Close the other PhoneMic window, or choose another port and click Retry. |
+| No "CABLE Output" in Discord | VB-CABLE isn't installed yet or needs a reboot: redo step 2. |
+| Audio is choppy | Pick a bigger **buffer** in the PC window (e.g. "Stable Wi-Fi (80 ms)"), or move closer to the router. |

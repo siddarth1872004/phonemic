@@ -1,7 +1,7 @@
 // Shared-memory ring: the single audio data path between the user-mode core
 // (producer) and the kernel ACX driver (consumer). See ipc/README.md for the
 // rationale (ring over per-buffer IOCTL). This header is the canonical contract;
-// the Rust side mirrors this layout exactly (see ring_mirror.rs).
+// the C++ producer (ring_producer.hpp) static_asserts this exact layout.
 //
 // Discipline: single-producer (user mode) / single-consumer (driver). Indices
 // are monotonically increasing sample counters; the slot is `index % capacity`.
