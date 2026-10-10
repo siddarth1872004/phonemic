@@ -15,6 +15,12 @@ your WDK's acx.h when building (see README.md).
 #include <ntddk.h>
 #include <wdf.h>
 #include <acx.h>
+// Same include order portcls.h uses for kernel audio: windef + mmreg (for
+// WAVEFORMATEXTENSIBLE) before the KS headers.
+#include <windef.h>
+#define NOBITMAP
+#include <mmreg.h>
+#undef NOBITMAP
 #include <ks.h>
 #include <ksmedia.h>
 

@@ -11,7 +11,20 @@
 // user/kernel boundary because the section is mapped into both.
 #pragma once
 
+#if defined(_KERNEL_MODE)
+// The kernel CRT has no <stdint.h>: use the WDK's fixed-width types.
+#include <ntdef.h>
+typedef UINT8 phonemic_u8;
+typedef INT16 phonemic_i16;
+typedef UINT32 phonemic_u32;
+typedef UINT64 phonemic_u64;
+#else
 #include <stdint.h>
+typedef uint8_t phonemic_u8;
+typedef int16_t phonemic_i16;
+typedef uint32_t phonemic_u32;
+typedef uint64_t phonemic_u64;
+#endif
 
 // 1 second of mono 48 kHz PCM16. Power-of-two would let us mask instead of mod;
 // kept round for clarity — revisit if profiling says the `%` matters.
@@ -25,24 +38,24 @@
 
 #pragma pack(push, 8)
 typedef struct _PHONEMIC_RING {
-    uint32_t abi_version;   // == PHONEMIC_RING_ABI_VERSION
-    uint32_t capacity;      // == PHONEMIC_RING_CAPACITY (samples)
-    uint32_t sample_rate;   // == PHONEMIC_SAMPLE_RATE
-    uint32_t channels;      // == PHONEMIC_CHANNELS
+    phonemic_u32 abi_version;   // == PHONEMIC_RING_ABI_VERSION
+    phonemic_u32 capacity;      // == PHONEMIC_RING_CAPACITY (samples)
+    phonemic_u32 sample_rate;   // == PHONEMIC_SAMPLE_RATE
+    phonemic_u32 channels;      // == PHONEMIC_CHANNELS
 
     // Cache-line separation so producer and consumer don't false-share the two
     // hot indices.
-    uint8_t  _pad0[64 - 16];
-    volatile uint64_t write_index;  // producer-owned: total samples written
-    uint8_t  _pad1[64 - 8];
-    volatile uint64_t read_index;   // consumer-owned: total samples read
-    uint8_t  _pad2[64 - 8];
+    phonemic_u8  _pad0[64 - 16];
+    volatile phonemic_u64 write_index;  // producer-owned: total samples written
+    phonemic_u8  _pad1[64 - 8];
+    volatile phonemic_u64 read_index;   // consumer-owned: total samples read
+    phonemic_u8  _pad2[64 - 8];
 
-    int16_t  samples[PHONEMIC_RING_CAPACITY];
+    phonemic_i16  samples[PHONEMIC_RING_CAPACITY];
 } PHONEMIC_RING;
 #pragma pack(pop)
 
 // Samples available to the consumer right now.
-static inline uint64_t phonemic_ring_available(const PHONEMIC_RING* r) {
+static inline phonemic_u64 phonemic_ring_available(const PHONEMIC_RING* r) {
     return r->write_index - r->read_index;
 }

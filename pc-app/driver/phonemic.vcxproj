@@ -61,6 +61,21 @@
     </Link>
   </ItemDefinitionGroup>
 
+  <!-- Some WDK installs (e.g. GitHub's windows-2022 image) lack the ACX headers.
+       Point PhonemicAcxRoot at the "c" folder of the Microsoft.Windows.WDK.x64
+       NuGet package to take ACX from there (CI does). -->
+  <PropertyGroup>
+    <PhonemicAcxSdkVersion Condition="'$(PhonemicAcxSdkVersion)' == ''">10.0.26100.0</PhonemicAcxSdkVersion>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(PhonemicAcxRoot)' != ''">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(PhonemicAcxRoot)\Include\$(PhonemicAcxSdkVersion)\km\acx\km\$(ACX_VERSION_MAJOR).$(ACX_VERSION_MINOR);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(PhonemicAcxRoot)\Lib\$(PhonemicAcxSdkVersion)\km\x64\acx\km\$(ACX_VERSION_MAJOR).$(ACX_VERSION_MINOR)\acxstub.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
   <ItemGroup>
     <ClCompile Include="driver.c" />
   </ItemGroup>
