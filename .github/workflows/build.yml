@@ -105,13 +105,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
-      - name: Show installed WDK
+      - name: Locate ACX in the installed WDK
         shell: pwsh
         run: |
-          Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Include" | Select-Object Name
-          Get-ChildItem -Recurse -Filter acx.h "${env:ProgramFiles(x86)}\Windows Kits\10\Include" -ErrorAction SilentlyContinue | Select-Object FullName
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
+          Get-ChildItem -Recurse -Include acx*.h,acx*.lib -Path "$kits\Include","$kits\Lib" -ErrorAction SilentlyContinue | Select-Object FullName
       - name: Build phonemic.sys
-        run: msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /m /v:minimal
+        run: msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off /p:EnableInfVerif=false /m /v:minimal
       - uses: actions/upload-artifact@v4
         if: success()
         with:
