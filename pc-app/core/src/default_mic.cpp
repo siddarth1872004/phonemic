@@ -61,12 +61,15 @@ bool make_default_mic(const VirtualMic& vm, std::string* err) {
 #elif defined(__APPLE__)
 
 namespace {
+// kAudioObjectPropertyElementMain (named so from macOS 12; we support 11).
+constexpr AudioObjectPropertyElement kElementMain = 0;
+
 // kDeviceUID in pc-app/driver-macos/PhoneMicAudio.c.
 AudioObjectID phonemic_device() {
     CFStringRef uid = CFSTR("PhoneMicLoopback_UID");
     AudioObjectID dev = kAudioObjectUnknown;
     AudioObjectPropertyAddress a = {kAudioHardwarePropertyTranslateUIDToDevice, kAudioObjectPropertyScopeGlobal,
-                                    kAudioObjectPropertyElementMain};
+                                    kElementMain};
     UInt32 size = sizeof dev;
     if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, sizeof uid, &uid, &size, &dev) != noErr)
         return kAudioObjectUnknown;
@@ -74,7 +77,7 @@ AudioObjectID phonemic_device() {
 }
 
 const AudioObjectPropertyAddress kDefaultInput = {kAudioHardwarePropertyDefaultInputDevice,
-                                                  kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+                                                  kAudioObjectPropertyScopeGlobal, kElementMain};
 }  // namespace
 
 DefaultMicState default_mic_state(const VirtualMic&) {
