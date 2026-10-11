@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>PhoneMic</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.phonemic.audio</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>PhoneMic</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@PROJECT_VERSION@</string>
+	<key>CFBundleVersion</key>
+	<string>@PROJECT_VERSION@</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>PhoneMic (MIT OR Apache-2.0)</string>
+	<!-- AudioServerPlugIn registration: coreaudiod calls PhoneMic_Create with
+	     the AudioServerPlugIn type UUID (443ABAB8-...). -->
+	<key>CFPlugInFactories</key>
+	<dict>
+		<key>51705D5F-A32B-4BA4-91AB-DD16FDB6B416</key>
+		<string>PhoneMic_Create</string>
+	</dict>
+	<key>CFPlugInTypes</key>
+	<dict>
+		<key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
+		<array>
+			<string>51705D5F-A32B-4BA4-91AB-DD16FDB6B416</string>
+		</array>
+	</dict>
+</dict>
+</plist>

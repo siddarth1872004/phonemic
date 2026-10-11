@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.siddarth1872004.phonemic</id>
+  <name>PhoneMic</name>
+  <summary>Use your phone as a wireless microphone for your PC</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <description>
+    <p>
+      Speak into your phone and it shows up as a microphone ("PhoneMic Microphone")
+      in Discord, Zoom, OBS, Teams or any other app. Works over Wi-Fi, a USB cable,
+      or from the phone's web browser with no app install.
+    </p>
+    <ul>
+      <li>Low latency, with drift compensation and packet-loss concealment</li>
+      <li>Opus compression with forward error correction</li>
+      <li>Noise removal (RNNoise), voice effects, gain and mute</li>
+      <li>Optional end-to-end encryption with a PIN</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">phonemic.desktop</launchable>
+  <url type="homepage">https://github.com/siddarth1872004/phonemic</url>
+  <url type="bugtracker">https://github.com/siddarth1872004/phonemic/issues</url>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.3.0" date="2026-10-11"/>
+  </releases>
+</component>

@@ -57,7 +57,7 @@ void usage() {
         "  --measure [N]       print one-way latency stats for N packets (use with\n"
         "                      phonemic-softphone --wallclock on the same machine)\n"
 #ifdef _WIN32
-        "  --driver            feed the experimental PhoneMic ACX driver (admin)\n"
+        "  --driver            require the PhoneMic driver (default: use it if installed)\n"
 #endif
         "  --version");
 }
@@ -122,7 +122,7 @@ int main(int argc, char** argv) {
 
     EventLog log(60, /*echo_stderr=*/true);
     VirtualMic vmic;
-    if (use_vmic && !null_out && !driver) vmic = setup_virtual_mic(&log);
+    if (use_vmic && !null_out) vmic = setup_virtual_mic(&log);
 
     Receiver rx(&log);
     rx.set_passphrase(pin);
@@ -135,13 +135,14 @@ int main(int argc, char** argv) {
     std::unique_ptr<AudioSinkIface> driver_sink;
     std::string err;
     std::string out_name = "nothing (--null)";
-    if (driver) {
+    if (driver || (device.empty() && !null_out && !measure && vmic.direct_feed)) {
 #ifdef _WIN32
-        auto f = DriverFeed::create(&err);
-        if (!f) { std::fprintf(stderr, "driver feed: %s\n", err.c_str()); return 1; }
+        auto f = DriverFeed::open(&err);
+        if (!f) { std::fprintf(stderr, "PhoneMic driver: %s\n", err.c_str()); return 1; }
+        f->set_latency_ms(static_cast<uint32_t>(latency));
         driver_sink = std::move(f);
         rx.set_mic_sink(driver_sink.get());
-        out_name = "PhoneMic ACX driver (Global\\PhonemicRing)";
+        out_name = "PhoneMic driver (apps record \"PhoneMic Microphone\")";
 #else
         std::fprintf(stderr, "--driver is Windows-only\n");
         return 2;

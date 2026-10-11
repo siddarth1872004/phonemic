@@ -78,6 +78,16 @@ v0.3 also moves the desktop app from Rust to **C++17** (see the end of this file
 
 The driver now compiles and links in CI against the WDK 10.0.26100 headers (ACX 1.0, KMDF 1.33). It has **not been loaded** on real Windows yet and is labelled as such.
 
+### Found while making PhoneMic's own drivers the default
+
+| # | Problem | Fix |
+|---|---|---|
+| 54 | **Linux: "PhoneMic Microphone" was never created on PulseAudio.** The module argument quoted only the description, PulseAudio rejected `module-remap-source`, and the app still reported the mic as ready. | The whole property list is one quoted argument; a fallback loads the source without properties. CI now records from the mic to prove it. |
+| 55 | Linux needed the `pactl` tool, which many distros don't install by default. | libpulse is loaded at run time and driven directly (PulseAudio and PipeWire). |
+| 56 | The Windows driver path needed the app to run as administrator (creating `Global\` objects needs a privilege). | The driver creates the ring with a DACL for signed-in users; the app only opens it. |
+| 57 | Writing the ring as audio arrived would have under/overrun as the phone's and the driver's clocks drift. | The ring is fed at the driver's pace from the adaptive playout buffer. |
+| 58 | The INF needed stampinf placeholders filled and allowed Windows 11 21H2, which lacks KMDF 1.33. | Static `DriverVer`/KMDF version; targets 22H2+ (build 22621). |
+
 ## Build, CI and docs
 
 | # | Problem | Fix |

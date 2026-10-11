@@ -14,6 +14,9 @@
 #include "phonemic/usb.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
+#ifdef _WIN32
+#include "driver_feed.hpp"
+#endif
 #ifdef PHONEMIC_HAVE_WEB
 #include "phonemic/web_server.hpp"
 #endif
@@ -48,8 +51,12 @@ public:
     void refresh_devices();
     void refresh_addresses();
     void set_remember_passphrase(bool on);
+    // Install PhoneMic's own virtual-mic driver (Windows / macOS), then switch to it.
+    void install_driver();
+    // Look for the virtual microphone again (after installing a driver).
+    void redetect_virtual_mic();
 #ifdef _WIN32
-    void install_vbcable();
+    void install_vbcable();  // fallback
 #endif
 
     // ---- state the UI reads ----
@@ -59,7 +66,7 @@ public:
     std::vector<net::LocalAddress> addresses;
     std::vector<AudioDeviceInfo> devices;
     std::string bind_error, mic_error, monitor_error, web_error;
-    bool mic_is_virtual = false;  // routing into the virtual cable / sink
+    bool mic_is_virtual = false;  // routing into the virtual microphone
     Receiver::Snapshot snap;
     AdaptivePlayout::Stats mic_stats;
 
@@ -79,6 +86,9 @@ private:
     std::unique_ptr<UsbIngest> usb_;
     AdbBridge adb_{&log};
     AudioOutput mic_out_, mon_out_;
+#ifdef _WIN32
+    std::unique_ptr<DriverFeed> drv_;  // the PhoneMic driver, when it's the mic
+#endif
 #ifdef PHONEMIC_HAVE_WEB
     std::unique_ptr<WebServer> web_;
 #endif
@@ -88,6 +98,7 @@ private:
         std::mutex mu;
         std::string msg;
         bool busy = false;
+        bool redetect = false;  // an install finished: look for the mic again
     };
     std::shared_ptr<SetupState> setup_ = std::make_shared<SetupState>();
 };

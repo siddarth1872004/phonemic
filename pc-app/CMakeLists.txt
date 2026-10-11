@@ -16,7 +16,12 @@ add_library(phonemic_core STATIC
   core/src/virtual_mic.cpp
   core/src/voice_fx.cpp
   core/src/websocket.cpp
+  ipc/ring_feeder.cpp
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(phonemic_core PRIVATE core/src/pulse_ctl.cpp)
+  target_link_libraries(phonemic_core PRIVATE ${CMAKE_DL_LIBS})
+endif()
 target_include_directories(phonemic_core PUBLIC core/include ipc)
 target_link_libraries(phonemic_core PUBLIC phonemic_shared opus PRIVATE miniaudio)
 target_compile_definitions(phonemic_core PUBLIC PHONEMIC_VERSION="${PROJECT_VERSION}")
@@ -45,7 +50,7 @@ if(PHONEMIC_WITH_WEB)
 endif()
 
 if(WIN32)
-  target_link_libraries(phonemic_core PUBLIC ws2_32 iphlpapi bcrypt)
+  target_link_libraries(phonemic_core PUBLIC ws2_32 iphlpapi bcrypt winmm)
   target_compile_definitions(phonemic_core PUBLIC _WIN32_WINNT=0x0A00 NOMINMAX WIN32_LEAN_AND_MEAN)
   target_sources(phonemic_core PRIVATE ipc/driver_feed_win.cpp)
 else()
@@ -77,4 +82,32 @@ if(PHONEMIC_BUILD_TOOLS)
   target_link_libraries(phonemic-receiver PRIVATE phonemic_core)
   add_executable(phonemic-softphone tools/softphone_main.cpp)
   target_link_libraries(phonemic-softphone PRIVATE phonemic_core)
+  # Plays a tone into a virtual mic and checks it comes back (CI, and support).
+  add_executable(phonemic-vmic-check tools/vmic_check_main.cpp)
+  target_link_libraries(phonemic-vmic-check PRIVATE phonemic_core miniaudio)
+  if(WIN32)
+    # Creates the PhoneMic device and installs the driver (install-driver.ps1).
+    add_executable(phonemic-driver tools/driver_setup_win.cpp)
+    target_link_libraries(phonemic-driver PRIVATE phonemic_core setupapi newdev cfgmgr32)
+    if(MINGW)
+      target_link_options(phonemic-driver PRIVATE -municode)
+    endif()
+  endif()
+endif()
+
+# ---- macOS virtual microphone (Core Audio plug-in) ---------------------------------
+if(APPLE)
+  add_subdirectory(driver-macos)
+  # Ship the driver inside PhoneMic.app so the app's "Install" button finds it.
+  if(TARGET PhoneMic)
+    add_dependencies(PhoneMic PhoneMicAudio)
+    add_custom_command(TARGET PhoneMic POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources
+      COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/PhoneMic.driver
+      # ditto keeps permissions and the code signature intact.
+      COMMAND ditto $<TARGET_BUNDLE_DIR:PhoneMicAudio> $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/PhoneMic.driver
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/driver-macos/install-driver.sh
+              $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/install-driver.sh
+      VERBATIM)
+  endif()
 endif()

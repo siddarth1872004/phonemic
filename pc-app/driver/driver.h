@@ -4,7 +4,9 @@ PhoneMic virtual audio capture driver — shared declarations.
 A WDF + ACX (Audio Class eXtensions) driver, structured after Microsoft's ACX
 samples, that publishes one capture circuit: a streaming pin plus a
 "microphone" bridge pin. The capture stream is fed from the shared-memory ring
-(../ipc/ring.h) that the PhoneMic desktop app fills (phonemic-receiver --driver).
+(../ipc/ring.h). The driver creates that ring when the device starts, with a
+DACL that lets signed-in users map it, so the PhoneMic desktop app (an ordinary,
+non-elevated process) can open it and write audio into it.
 
 STATUS: experimental. CI compiles and links it against the WDK 10.0.26100
 headers (ACX 1.0, KMDF 1.33), but it has never been loaded or run on Windows
@@ -12,7 +14,7 @@ headers (ACX 1.0, KMDF 1.33), but it has never been loaded or run on Windows
 --*/
 #pragma once
 
-#include <ntddk.h>
+#include <ntifs.h>  // ntddk.h plus the ACL / SID helpers used to secure the ring
 #include <wdf.h>
 #include <acx.h>
 // Same include order portcls.h uses for kernel audio: windef + mmreg (for
@@ -39,30 +41,30 @@ DEFINE_GUID(PHONEMIC_CIRCUIT_COMPONENT_GUID,
 #define PHONEMIC_BITS_PER_SAMPLE 16
 #define PHONEMIC_BLOCK_ALIGN     (PHONEMIC_CHANNELS * PHONEMIC_BITS_PER_SAMPLE / 8)
 
-// The desktop app creates Global\PhonemicRing; the driver opens it by name.
+// Created by the driver; the desktop app opens it as Global\PhonemicRing.
 #define PHONEMIC_RING_SECTION_NAME L"\\BaseNamedObjects\\PhonemicRing"
 
 #define PHONEMIC_MAX_PACKETS 8
 
 typedef struct _PHONEMIC_DEVICE_CONTEXT {
     ACXCIRCUIT Circuit;
+
+    // The shared ring, mapped into SYSTEM space with its pages locked so the
+    // DISPATCH_LEVEL pump can read it. Ring is NULL if it couldn't be created
+    // (streams then play silence).
+    HANDLE          SectionHandle;
+    PVOID           SectionObject;
+    PVOID           RingView;
+    PMDL            RingMdl;
+    PHONEMIC_RING*  Ring;
 } PHONEMIC_DEVICE_CONTEXT, *PPHONEMIC_DEVICE_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(PHONEMIC_DEVICE_CONTEXT, PhonemicDeviceGetContext)
 
 // Per-stream state. Fields touched by the DISPATCH_LEVEL pump live in
-// non-paged memory (WDF contexts are non-paged); the shared ring is mapped into
-// SYSTEM space and its pages are locked, so the pump can read it at DISPATCH.
+// non-paged memory (WDF contexts are non-paged).
 typedef struct _PHONEMIC_STREAM_CONTEXT {
-    // Shared ring (produced by user mode). NULL until the app is running.
-    HANDLE          SectionHandle;
-    PVOID           SectionObject;
-    PVOID           RingView;       // system-space view
-    PMDL            RingMdl;        // locks the view's pages
-    PHONEMIC_RING*  Ring;
+    PHONEMIC_RING*  Ring;           // the device's ring (owned by the device)
     ULONGLONG       RingReadIndex;  // our consumer cursor
-    LONG            MapPending;     // a map work item is queued
-    ULONGLONG       LastMapAttempt; // interrupt time (100 ns) of the last try
-    WDFWORKITEM     MapWorkItem;
 
     // RT packets handed to the audio stack (non-paged, from MmAllocatePagesForMdlEx).
     ULONG           PacketCount;
@@ -94,9 +96,9 @@ EVT_ACX_STREAM_FREE_RTPACKETS PhonemicEvtStreamFreeRtPackets;
 EVT_ACX_STREAM_GET_CAPTURE_PACKET PhonemicEvtStreamGetCapturePacket;
 EVT_ACX_STREAM_GET_PRESENTATION_POSITION PhonemicEvtStreamGetPresentationPosition;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP PhonemicEvtStreamCleanup;
+EVT_WDF_OBJECT_CONTEXT_CLEANUP PhonemicEvtDeviceCleanup;
 EVT_WDF_TIMER PhonemicEvtPumpTimer;
-EVT_WDF_WORKITEM PhonemicEvtMapWorkItem;
 
 NTSTATUS PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device, _Out_ ACXCIRCUIT* Circuit);
-NTSTATUS PhonemicMapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Ctx);
-VOID     PhonemicUnmapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Ctx);
+NTSTATUS PhonemicCreateRing(_Inout_ PPHONEMIC_DEVICE_CONTEXT Dev);
+VOID     PhonemicDestroyRing(_Inout_ PPHONEMIC_DEVICE_CONTEXT Dev);

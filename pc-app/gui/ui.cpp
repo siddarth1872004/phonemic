@@ -330,33 +330,59 @@ void output_card(App& app, UiState& ui) {
     section_label(ui, "MICROPHONE OUTPUT");
     if (!app.mic_error.empty()) colored_wrapped(kRed, "Audio output problem: " + app.mic_error);
 
+    const bool busy = app.setup_busy();
+    const bool can_install = !app.vmic.driver_package.empty();
     if (app.mic_is_virtual) {
         status_dot(kGreen, S(ui, 5));
         ImGui::TextColored(kText, "Microphone mode");
+        if (!app.vmic.via.empty()) {
+            ImGui::SameLine();
+            ImGui::PushFont(ui.fonts.small);
+            ImGui::TextColored(kMuted, "via %s", app.vmic.via.c_str());
+            ImGui::PopFont();
+        }
         ImGui::TextWrapped("In Discord / Zoom / OBS choose the microphone:");
         ImGui::TextColored(kAccent, "%s", app.vmic.mic_name.c_str());
+        // Running on a third-party driver: offer PhoneMic's own.
+        if (app.vmic.third_party && can_install) {
+            ImGui::BeginDisabled(busy);
+            if (ImGui::SmallButton("Switch to the PhoneMic driver")) app.install_driver();
+            ImGui::EndDisabled();
+        }
     } else {
         status_dot(kAmber, S(ui, 5));
         ImGui::TextColored(kText, "No virtual microphone yet");
         if (!app.vmic.help.empty()) muted_wrapped(ui, app.vmic.help);
-#ifdef _WIN32
         if (!app.vmic.ready) {
-            const bool busy = app.setup_busy();
             ImGui::BeginDisabled(busy);
-            ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
-            if (ImGui::Button("Set up microphone (VB-CABLE)")) app.install_vbcable();
-            ImGui::PopStyleColor();
-            ImGui::EndDisabled();
-            const std::string msg = app.setup_message();
-            if (!msg.empty()) colored_wrapped(busy ? kMuted : (msg.rfind("Setup failed", 0) == 0 ? kRed : kGreen), msg);
-        }
+            if (can_install) {
+                ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
+                if (ImGui::Button("Install PhoneMic driver")) app.install_driver();
+                ImGui::PopStyleColor();
+            }
+#ifdef _WIN32
+            // Fallback for Windows 10, or when test-signing isn't an option.
+            if (can_install) ImGui::SameLine();
+            if (ImGui::Button(can_install ? "Use VB-CABLE instead" : "Set up microphone (VB-CABLE)"))
+                app.install_vbcable();
 #endif
+            ImGui::EndDisabled();
+        }
+    }
+    {
+        const std::string msg = app.setup_message();
+        if (!msg.empty()) colored_wrapped(busy ? kMuted : (msg.rfind("Setup failed", 0) == 0 ? kRed : kGreen), msg);
     }
 
     ImGui::PushFont(ui.fonts.small);
     ImGui::TextColored(kMuted, "Send audio to:");
     ImGui::SameLine();
-    if (ImGui::SmallButton("refresh list")) app.refresh_devices();
+    if (ImGui::SmallButton("refresh list")) {
+        // Look for the virtual mic again only if we don't have our own yet
+        // (re-creating it would cut off apps that are recording it).
+        if (!app.vmic.ready || app.vmic.third_party) app.redetect_virtual_mic();
+        else app.refresh_devices();
+    }
     ImGui::PopFont();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
     std::string chosen;

@@ -19,11 +19,27 @@ ctest --test-dir build --output-on-failure
 | `test_web_server.cpp` | real TLS: page + CSP, wrong pairing code → 403, WebSocket upgrade, audio delivered |
 | `test_opus.cpp` | Opus round trip (pitch, < 70 kbps), receiver decoding, a dropped packet rebuilt from FEC, corrupt packet concealed |
 | `test_usb.cpp` | length-prefixed framing, real TCP stream → audio + STATUS, PIN policy over USB, listener unreachable from the LAN, process runner |
-| `test_websocket.cpp`, `test_settings.cpp`, `test_ipc.cpp` | SHA-1/Base64/RFC 6455 vectors, frame parser, settings round trip, driver ring |
+| `test_websocket.cpp`, `test_settings.cpp` | SHA-1/Base64/RFC 6455 vectors, frame parser, settings round trip |
+| `test_ipc.cpp` | driver ring layout and SPSC rules; the feeder holding latency against a driver clock 300 ppm off for 3 simulated minutes; Windows: opening and feeding a stand-in for the driver's ring, version mismatch rejected |
 | `test_wire_c99.c` | the shared headers compile as strict C99 |
 
 CI also runs the suite under **AddressSanitizer + UndefinedBehaviorSanitizer**,
 on Windows (MSVC) and macOS, and builds the Android app with lint.
+
+### The virtual microphone, for real
+
+`phonemic-vmic-check --setup` runs the app's own virtual-mic setup, plays a
+997 Hz tone into it, records the microphone apps would pick, and passes only if
+the tone comes back (level and spectrum). CI runs it:
+
+- on Ubuntu with PulseAudio;
+- on macOS after installing PhoneMic.driver into Core Audio;
+- after installing the `.deb`/`.rpm`/tarball on Ubuntu 22.04 (PulseAudio),
+  Debian 12, Fedora 41, Arch Linux and openSUSE Tumbleweed (PipeWire), where the
+  test suite also runs; and on Rocky Linux 8 (glibc 2.28, the oldest supported)
+  the package install and the test suite.
+
+Run it yourself to check a setup: `phonemic-vmic-check --setup` (or `--list`).
 
 ## Without a phone
 

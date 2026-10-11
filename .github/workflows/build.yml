@@ -24,23 +24,146 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev pulseaudio pulseaudio-utils
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
-      - name: Package
+      - name: Virtual microphone works (PulseAudio)
+        # The app's own setup creates "PhoneMic Microphone"; a tone played into
+        # it must come back out of it.
         run: |
+          pulseaudio -D --exit-idle-time=-1
+          sleep 1
+          build/bin/phonemic-vmic-check --setup
+
+  # One build for every glibc distro: built on glibc 2.28 (AlmaLinux 8), with
+  # libstdc++ linked in, X11 + native Wayland, and the sound server, Wayland and
+  # GL loaded from the system at run time.
+  linux-portable:
+    name: Linux packages (AppImage, .deb, .rpm, .tar.gz)
+    runs-on: ubuntu-24.04
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          dnf install -y libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel \
+            mesa-libGL-devel wayland-devel libxkbcommon-devel rpm-build desktop-file-utils file
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DPHONEMIC_PORTABLE=ON -DPHONEMIC_WAYLAND=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Check the glibc baseline
+        run: |
+          for b in build/bin/PhoneMic build/bin/phonemic-receiver; do
+            v=$(objdump -T "$b" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
+            echo "$b needs $v"
+            case "$v" in GLIBC_2.[0-9]|GLIBC_2.1[0-9]|GLIBC_2.2[0-8]) ;; *) echo "too new"; exit 1 ;; esac
+            if ldd "$b" | grep -q libstdc++; then echo "libstdc++ must be linked statically"; exit 1; fi
+          done
+      - name: Packages
+        run: |
+          cd build && cpack -G "DEB;RPM" && cd ..
+          cmake --install build --prefix "$PWD/stage/phonemic" --component phonemic
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          sh packaging/linux/build-appimage.sh "$PWD/stage/phonemic" "$PWD/appimagetool" PhoneMic-x86_64.AppImage
           mkdir -p dist
-          cp build/bin/PhoneMic dist/PhoneMic-linux
-          cp build/bin/phonemic-receiver build/bin/phonemic-softphone dist/
-          tar -C dist -czf PhoneMic-linux-x64.tar.gz .
+          mv PhoneMic-x86_64.AppImage build/phonemic_*.deb build/phonemic-*.rpm dist/
+          tar -C stage -czf dist/PhoneMic-linux-x86_64.tar.gz phonemic
+          ls -la dist
       - uses: actions/upload-artifact@v4
         with:
           name: PhoneMic-linux
-          path: PhoneMic-linux-x64.tar.gz
+          path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tests
+          path: build/bin/phonemic-tests
+
+  # Install the packages on real distros and prove the virtual mic works there,
+  # on each distro's default sound server. Rocky Linux 8 is the glibc 2.28
+  # baseline (install + test suite).
+  linux-distros:
+    name: Linux on ${{ matrix.distro }}
+    needs: linux-portable
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: Debian 12, image: "debian:12", server: pipewire }
+          - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pulseaudio }
+          - { distro: Fedora 41, image: "fedora:41", server: pipewire }
+          - { distro: Arch Linux, image: "archlinux:latest", server: pipewire }
+          - { distro: openSUSE Tumbleweed, image: "opensuse/tumbleweed", server: pipewire }
+          - { distro: Rocky Linux 8 (glibc 2.28), image: "rockylinux:8", server: none }
+    env:
+      SERVER: ${{ matrix.server }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhoneMic-linux
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-tests
+          path: tests
+      - name: Install PhoneMic and the sound server
+        shell: sh
+        run: |
+          set -eux
+          pw() { [ "$SERVER" = pipewire ] && echo "$@" || true; }
+          pa() { [ "$SERVER" = pulseaudio ] && echo "$@" || true; }
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/phonemic_*.deb $(pw pipewire pipewire-pulse wireplumber dbus) $(pa pulseaudio)
+          elif command -v dnf >/dev/null; then
+            dnf install -y ./dist/phonemic-*.rpm $(pw pipewire pipewire-pulseaudio wireplumber dbus-daemon)
+          elif command -v zypper >/dev/null; then
+            zypper --non-interactive install --allow-unsigned-rpm ./dist/phonemic-*.rpm $(pw pipewire pipewire-pulseaudio wireplumber dbus-1)
+          elif command -v pacman >/dev/null; then
+            pacman -Syu --noconfirm libglvnd libx11 $(pw pipewire pipewire-pulse wireplumber dbus)
+            tar -xzf dist/PhoneMic-linux-x86_64.tar.gz -C /opt
+            ln -s /opt/phonemic/bin/* /usr/local/bin/
+          fi
+          phonemic-receiver --version
+      - name: Test suite
+        shell: sh
+        run: chmod +x tests/phonemic-tests && tests/phonemic-tests
+      - name: Virtual microphone works (PipeWire)
+        if: matrix.server == 'pipewire'
+        shell: sh
+        run: |
+          set -eux
+          cat > /tmp/run.sh <<'SH'
+          export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
+          pipewire & sleep 1; wireplumber & pipewire-pulse & sleep 3
+          phonemic-vmic-check --setup
+          SH
+          if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
+      - name: Virtual microphone works (PulseAudio)
+        if: matrix.server == 'pulseaudio'
+        shell: sh
+        run: |
+          set -eux
+          export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
+          # PulseAudio won't start if it can't use $HOME, and container jobs get a
+          # HOME owned by the runner's user; give it its own. Foreground, client
+          # socket only: there is no sound card or D-Bus in a container.
+          export HOME=/tmp/pahome; mkdir -p -m 700 $HOME
+          pulseaudio --daemonize=no -n --exit-idle-time=-1 --load=module-native-protocol-unix &
+          sleep 2
+          phonemic-vmic-check --setup
 
   sanitizers:
     name: Linux (ASan + UBSan tests)
@@ -71,36 +194,55 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Package
+      - name: Check the driver scripts parse
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build/bin/Release/PhoneMic.exe, build/bin/Release/phonemic-receiver.exe, build/bin/Release/phonemic-softphone.exe dist/
-          Compress-Archive -Path dist/* -DestinationPath PhoneMic-windows-x64.zip
+          foreach ($f in 'pc-app/driver/install-driver.ps1', 'pc-app/driver/uninstall-driver.ps1') {
+            $t = $null; $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$t, [ref]$e)
+            if ($e.Count) { $e | ForEach-Object { Write-Error "$f $_" }; exit 1 }
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: PhoneMic-windows
+          name: PhoneMic-windows-bin
           path: |
-            PhoneMic-windows-x64.zip
             build/bin/Release/PhoneMic.exe
+            build/bin/Release/phonemic-receiver.exe
+            build/bin/Release/phonemic-softphone.exe
+            build/bin/Release/phonemic-vmic-check.exe
+            build/bin/Release/phonemic-driver.exe
 
   macos:
-    name: macOS (experimental)
+    name: macOS (build + tests + virtual mic)
     runs-on: macos-14
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Install PhoneMic.driver
+        run: |
+          sudo sh build/bin/PhoneMic.app/Contents/Resources/install-driver.sh build/bin/PhoneMic.app/Contents/Resources/PhoneMic.driver
+          sleep 5
+      - name: Virtual microphone works (PhoneMic.driver)
+        run: build/bin/phonemic-vmic-check --setup
+      - name: Package
+        run: |
+          mkdir -p dist
+          ditto build/bin/PhoneMic.app dist/PhoneMic.app
+          cp build/bin/phonemic-receiver build/bin/phonemic-softphone build/bin/phonemic-vmic-check dist/
+          ditto -c -k --keepParent dist PhoneMic-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-macos
+          path: PhoneMic-macos.zip
 
   driver:
-    name: Windows driver (WDK, experimental)
+    name: Windows driver (WDK)
     runs-on: windows-2022
-    # Compile + link check only (unsigned, never loaded). Releases don't wait on it.
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
@@ -113,11 +255,48 @@ jobs:
           msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
           /p:PhonemicSkipInf=true /m /v:minimal
           "/p:PhonemicAcxRoot=$env:RUNNER_TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
+      - name: Package (INF + catalog; signed on the user's PC by install-driver.ps1)
+        shell: pwsh
+        run: |
+          $pkg = 'driver-package'
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item pc-app/driver/x64/Release/phonemic.sys, pc-app/driver/phonemic.inf, pc-app/driver/install-driver.ps1, pc-app/driver/uninstall-driver.ps1 $pkg
+          $inf2cat = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x86\Inf2Cat.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $inf2cat) { Write-Error 'Inf2Cat not found'; exit 1 }
+          & $inf2cat.FullName "/driver:$((Resolve-Path $pkg).Path)" /os:10_NI_X64 /uselocaltime
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$pkg/phonemic.cat")) { Write-Error 'Inf2Cat failed'; exit 1 }
+          Get-ChildItem $pkg
       - uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: PhoneMic-driver-unsigned
-          path: pc-app/driver/x64/Release/
+          name: PhoneMic-driver-package
+          path: driver-package/
+
+  windows-package:
+    name: Windows package (app + PhoneMic driver)
+    needs: [windows, driver]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhoneMic-windows-bin
+          path: bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhoneMic-driver-package
+          path: dist/driver
+      - name: Assemble PhoneMic-windows-x64.zip
+        run: |
+          cp bin/PhoneMic.exe bin/phonemic-receiver.exe bin/phonemic-softphone.exe bin/phonemic-vmic-check.exe dist/
+          cp bin/phonemic-driver.exe dist/driver/
+          (cd dist && zip -r ../PhoneMic-windows-x64.zip .)
+          cp bin/PhoneMic.exe PhoneMic.exe
+          unzip -l PhoneMic-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-windows
+          path: |
+            PhoneMic-windows-x64.zip
+            PhoneMic.exe
 
   android:
     name: Android app
@@ -142,20 +321,24 @@ jobs:
   release:
     name: Attach binaries to the GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, sanitizers, windows, android]
+    needs: [linux, sanitizers, linux-distros, windows-package, macos, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
+          name: PhoneMic ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
           # Creates the release if it doesn't exist yet (the old workflow
           # failed unless someone had created it by hand first).
           files: |
             artifacts/PhoneMic-windows/PhoneMic-windows-x64.zip
-            artifacts/PhoneMic-windows/build/bin/Release/PhoneMic.exe
-            artifacts/PhoneMic-linux/PhoneMic-linux-x64.tar.gz
+            artifacts/PhoneMic-windows/PhoneMic.exe
+            artifacts/PhoneMic-macos/PhoneMic-macos.zip
+            artifacts/PhoneMic-linux/*
             artifacts/PhoneMic-android/PhoneMic.apk

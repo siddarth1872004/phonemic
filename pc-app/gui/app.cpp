@@ -24,7 +24,6 @@ App::App() {
 
     open_mic_output();
     open_monitor_output();
-    rx_->set_mic_sink(&mic_out_);
     rx_->set_monitor_sink(&mon_out_);
     restart_receiver();
 
@@ -46,6 +45,9 @@ App::~App() {
     rx_->stop();
     rx_->set_mic_sink(nullptr);
     rx_->set_monitor_sink(nullptr);
+#ifdef _WIN32
+    drv_.reset();
+#endif
     mic_out_.close();
     mon_out_.close();
     teardown_virtual_mic();
@@ -54,7 +56,17 @@ App::~App() {
 
 void App::tick() {
     snap = rx_->snapshot();
+#ifdef _WIN32
+    mic_stats = drv_ ? drv_->stats() : mic_out_.stats();
+#else
     mic_stats = mic_out_.stats();
+#endif
+    bool redetect = false;
+    {
+        std::lock_guard<std::mutex> lk(setup_->mu);
+        std::swap(redetect, setup_->redetect);
+    }
+    if (redetect) redetect_virtual_mic();
     const uint64_t now = mono_ms();
     if (dirty_at_ && now - dirty_at_ > 800) {
         settings.save(Settings::default_file());
@@ -75,17 +87,49 @@ void App::restart_receiver() {
 
 void App::open_mic_output() {
     mic_error.clear();
+    // Detach the receiver first: it must never write into a sink being replaced.
+    rx_->set_mic_sink(nullptr);
+    mic_out_.close();
+#ifdef _WIN32
+    drv_.reset();
+    // Automatic + the PhoneMic driver: write straight into its ring.
+    if (settings.mic_device.empty() && vmic.direct_feed) {
+        std::string err;
+        drv_ = DriverFeed::open(&err);
+        if (drv_) {
+            drv_->set_latency_ms(static_cast<uint32_t>(settings.latency_ms));
+            rx_->set_mic_sink(drv_.get());
+            mic_is_virtual = true;
+            return;
+        }
+        log.add("PhoneMic driver: " + err);
+    }
+#endif
     mic_out_.set_latency_ms(static_cast<uint32_t>(settings.latency_ms));
-    // Automatic = the virtual cable/sink if present. The old app on Linux opened
-    // the default device and then *never* fed the virtual mic (silent mic bug).
-    const std::string want = !settings.mic_device.empty() ? settings.mic_device
-                             : vmic.ready                  ? vmic.playback_match
-                                                           : std::string();
+    // Automatic = the virtual mic's playback side if there is one. The old app on
+    // Linux opened the default device and then *never* fed the virtual mic.
+    const std::string want = !settings.mic_device.empty()                    ? settings.mic_device
+                             : vmic.ready && !vmic.playback_match.empty() ? vmic.playback_match
+                                                                             : std::string();
     std::string err;
     bool ok = mic_out_.open(want, &err);
     if (!ok && !want.empty()) ok = mic_out_.open("", &err);
     if (!ok) mic_error = err;
-    mic_is_virtual = ok && vmic.ready && icontains(mic_out_.device_name(), vmic.playback_match);
+    mic_is_virtual = ok && vmic.ready && !vmic.playback_match.empty() &&
+                     icontains(mic_out_.device_name(), vmic.playback_match);
+    rx_->set_mic_sink(&mic_out_);
+}
+
+void App::redetect_virtual_mic() {
+    rx_->set_mic_sink(nullptr);
+    mic_out_.close();
+#ifdef _WIN32
+    drv_.reset();
+#endif
+    teardown_virtual_mic();
+    vmic = setup_virtual_mic(&log);
+    refresh_devices();
+    open_mic_output();
 }
 
 void App::open_monitor_output() {
@@ -155,6 +199,9 @@ void App::select_monitor_device(const std::string& name) {
 void App::set_latency_ms(int ms) {
     settings.latency_ms = ms;
     mic_out_.set_latency_ms(static_cast<uint32_t>(ms));
+#ifdef _WIN32
+    if (drv_) drv_->set_latency_ms(static_cast<uint32_t>(ms));
+#endif
     mon_out_.set_latency_ms(static_cast<uint32_t>(ms));
     mark_dirty();
 }
@@ -227,6 +274,21 @@ std::string App::setup_message() const {
 bool App::setup_busy() const {
     std::lock_guard<std::mutex> lk(setup_->mu);
     return setup_->busy;
+}
+
+void App::install_driver() {
+    {
+        std::lock_guard<std::mutex> lk(setup_->mu);
+        if (setup_->busy) return;
+        setup_->busy = true;
+        setup_->msg = "Installing the PhoneMic driver...";
+    }
+    install_driver_async(vmic, [st = setup_](bool, std::string msg) {
+        std::lock_guard<std::mutex> lk(st->mu);
+        st->busy = false;
+        st->msg = std::move(msg);
+        st->redetect = true;
+    });
 }
 
 #ifdef _WIN32

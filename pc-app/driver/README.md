@@ -1,75 +1,91 @@
-# PhoneMic virtual audio driver (experimental)
+# PhoneMic virtual microphone driver for Windows
 
-A native Windows capture device — "PhoneMic Microphone" — so PhoneMic no longer
-needs VB-CABLE. It is a kernel-mode **WDF + ACX** (Audio Class eXtensions) driver
+PhoneMic's own capture device, "PhoneMic Microphone", so no third-party virtual
+cable is needed. A kernel-mode **WDF + ACX** (Audio Class eXtensions) driver
 written in C, structured after Microsoft's ACX samples (not forked from any
-third-party driver). Audio comes from the desktop app through the shared-memory
-ring in [`../ipc`](../ipc).
+third-party driver). Windows 11 22H2 or newer.
 
 ```
-phone ─► PhoneMic app (jitter buffer, Voice Focus, effects)
-       ─► ipc/ring.h shared section  Global\PhonemicRing
+phone ─► PhoneMic app (jitter buffer, Voice Focus, effects, adaptive playout)
+       ─► Global\PhonemicRing (shared memory, created by this driver)
        ─► this driver's RT capture packets ─► Windows audio stack ─► Discord/Zoom
 ```
 
-## Status: experimental. Builds in CI, never loaded
+The driver creates the ring when its device starts, with a DACL that lets
+signed-in users map it, so the app (an ordinary, non-elevated process) opens it
+and writes into it. The app paces the ring with the driver's own clock
+(`ipc/ring_feeder.*`): it keeps ~20 ms queued and refills exactly what the
+driver consumed, so phone/PC clock drift is absorbed by the playout buffer.
 
-CI (job *Windows driver (WDK, experimental)*) compiles and links `phonemic.sys`
-with warnings as errors, against the WDK 10.0.26100 headers (ACX 1.0, KMDF 1.33),
-and uploads it unsigned as the `PhoneMic-driver-unsigned` artifact. It has
-**never been loaded or run** on a real Windows machine. It follows the ACX
-RT-stream model (circuit + streaming pin + microphone bridge pin,
-`AllocateRtPackets`, `GetCapturePacket`, `AcxRtStreamNotifyPacketComplete`).
-Treat it as a careful starting point, not a shipping driver.
+## Install (users)
 
-### Building without the WDK installer
+The Windows release zip has a `driver` folder next to `PhoneMic.exe`. In the app,
+click **Install PhoneMic driver**, or run `driver\install-driver.ps1`. It:
 
-GitHub's `windows-2022` image has a WDK without ACX. CI fills the gap from the
-`Microsoft.Windows.WDK.x64` NuGet package; you can do the same:
+1. checks for Windows 11 22H2+;
+2. explains **test mode** and asks before turning it on (needed until the driver
+   is attestation-signed by Microsoft; Secure Boot must be off; a "Test Mode"
+   watermark appears; some anti-cheat games refuse to run in it);
+3. creates a code-signing certificate that exists only on this PC and trusts it
+   for driver installs there;
+4. signs a copy of the package (`%ProgramData%\PhoneMic\driver`) with it;
+5. creates the root device `Root\PhonemicCapture` and installs the driver
+   (`phonemic-driver.exe install`, a small SetupAPI tool, like devcon).
 
-```powershell
-nuget install Microsoft.Windows.WDK.x64 -Version 10.0.26100.6584 -OutputDirectory $env:TEMP\nuget
-msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off `
-  /p:PhonemicSkipInf=true "/p:PhonemicAcxRoot=$env:TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
-```
+Restart when it says so. Then pick **PhoneMic Microphone** in your apps.
+`driver\uninstall-driver.ps1` removes the device, the driver package and the
+certificate, and offers to turn test mode off. `phonemic-driver.exe status`
+shows whether the device exists and the driver is running.
 
-`PhonemicSkipInf=true` skips INF validation and packaging (the runner image's
-InfVerif is broken); drop it for an installable package.
+On Windows 10, or without test mode, the app's **Use VB-CABLE instead** button
+sets up VB-CABLE as a fallback.
+
+## Status
+
+CI (job *Windows driver (WDK)*) compiles and links `phonemic.sys` with warnings
+as errors against the WDK 10.0.26100 headers (ACX 1.0, KMDF 1.33) and builds the
+catalog with Inf2Cat; the package ships inside the Windows zip. The app side
+(opening the ring, feeding it at the driver's pace) is unit-tested, including
+on Windows against a stand-in ring. The driver itself has **not yet been loaded
+on real hardware by the project**: please report how it goes.
 
 Safety properties the code is designed around (and that a reviewer should check):
 
 - The ring is mapped **read/write into system space** and its pages are **locked**
   before the DISPATCH_LEVEL pump touches them.
-- The mapped view size is checked against `sizeof(PHONEMIC_RING)`; the ABI header
-  is validated; every slot index is taken modulo the capacity, and user-mode
-  indices are clamped — a hostile or buggy producer can't make the driver read
-  out of bounds.
-- If the desktop app isn't running, the stream plays silence and retries the
-  mapping once a second from a PASSIVE_LEVEL work item.
+- The mapped view size is checked against `sizeof(PHONEMIC_RING)` (a pre-existing
+  section with the same name is reused only if it is big enough). The driver
+  writes the header and never reads layout values back from shared memory; every
+  slot index is taken modulo the capacity and user-mode indices are clamped — a
+  hostile or buggy producer can't make the driver read out of bounds.
+- The ring is created by the driver at PASSIVE_LEVEL when the device starts and
+  lives as long as the device. If the app isn't running, streams play silence.
+- Users may map the ring read/write but not change its DACL or delete it; only
+  SYSTEM and Administrators have full control.
 - The pump follows an absolute schedule derived from the packet count, so it
   doesn't drift.
 
-## Build
+## Build (developers)
 
 1. Visual Studio 2022 with "Desktop development with C++", the matching Windows
-   SDK, the **WDK** and its Visual Studio extension.
-2. Open `phonemic.vcxproj` (or create *Kernel Mode Driver, Empty (KMDF)* and add
-   `driver.c`, `driver.h`, `phonemic.inf`). ACX requires Windows 11.
-3. Enable test-signing on the test machine (admin), then reboot:
-   `bcdedit /set testsigning on` (Secure Boot may need to be off).
-4. Install: `pnputil /add-driver phonemic.inf /install`, then create the root
-   device, e.g. `devgen /add /hardwareid Root\PhonemicCapture` (WDK tool).
+   SDK, the **WDK** and its Visual Studio extension; open `phonemic.vcxproj`.
+2. Or without the WDK installer, as CI does, using the WDK NuGet package:
 
-## Run
-
-```
-phonemic-receiver --driver          (as administrator: it creates Global\PhonemicRing)
+```powershell
+nuget install Microsoft.Windows.WDK.x64 -Version 10.0.26100.6584 -OutputDirectory $env:TEMP\nuget
+msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off `
+  /p:PhonemicSkipInf=true "/p:PhonemicAcxRoot=$env:TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
+Inf2Cat /driver:<folder with phonemic.sys + phonemic.inf> /os:10_NI_X64
 ```
 
-Then pick **PhoneMic Microphone (virtual)** as the input in your apps.
+`phonemic.inf` is ready to package as is (no stampinf step): bump `DriverVer`
+with each release. Put `phonemic.sys`, `.inf`, `.cat`, the two scripts and
+`phonemic-driver.exe` (built by CMake on Windows) in one folder to install.
 
-## Distribution
+## Signing for everyone
 
-Test-signing is development-only. Shipping requires attestation signing through
-the Windows Hardware Dev Center (or WHQL). Until then the supported path is
-VB-CABLE, which the desktop app installs for you.
+Test mode is the price of an unsigned driver. Removing it needs Microsoft
+**attestation signing**: an EV code-signing certificate and a Windows Hardware
+Dev Center (Partner Center) account, then submitting the package (CAB) for
+signing. Once signed, `install-driver.ps1` can skip the test-mode and local
+certificate steps.
