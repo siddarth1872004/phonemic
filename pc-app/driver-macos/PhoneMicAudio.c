@@ -22,6 +22,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
+#include <stddef.h>
 #include <string.h>
 
 #define PM_EXPORT __attribute__((visibility("default")))

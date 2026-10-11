@@ -6,7 +6,7 @@
 
 No extra hardware, no subscription, no Electron. Native code end to end: a C++ desktop app and a C++/Oboe Android engine that share one protocol implementation.
 
-![Platform](https://img.shields.io/badge/PC-Windows%20%7C%20Linux%20%7C%20macOS*-0078D4)
+![Platform](https://img.shields.io/badge/PC-Windows%20%7C%20Linux%20%7C%20macOS-0078D4)
 ![Platform](https://img.shields.io/badge/Phone-Android%2010%2B%20%7C%20any%20browser-3DDC84)
 ![CI](https://github.com/siddarth1872004/phonemic/actions/workflows/build.yml/badge.svg)
 ![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
@@ -34,13 +34,22 @@ No extra hardware, no subscription, no Electron. Native code end to end: a C++ d
 | 🔒 **Encryption** | Same PIN or passphrase on both ends gives XChaCha20-Poly1305 with Argon2id keys. With a PIN set, unauthenticated audio is refused. |
 | 🩺 **Tells you what's wrong** | The PC reports back to the phone: *connected / wrong PIN / PIN required / PC busy / not running / no network*. |
 | 🎧 **Hear yourself** | "Listen on this PC" monitors on any output while the mic keeps feeding your apps. |
-| 🛠️ **One-click mic setup** | Windows: downloads and signature-checks VB-CABLE. Linux: creates a PulseAudio/PipeWire virtual mic automatically. |
+| 🎙️ **Its own virtual microphone** | "PhoneMic Microphone" on every OS, no third-party driver: an ACX driver on Windows 11, a Core Audio plug-in on macOS, PipeWire/PulseAudio on Linux. One click installs it. |
+| 🐧 **Every Linux distro** | One portable build (glibc 2.28+, X11 and Wayland) as AppImage, `.deb` and `.rpm`; tested on Debian, Ubuntu, Fedora, Arch and openSUSE. |
 
 ## 🚀 Quick start
 
 ### 1 · PC
 
-Download from [**Releases**](https://github.com/siddarth1872004/phonemic/releases): `PhoneMic.exe` (Windows) or `PhoneMic-linux-x64.tar.gz`. Or build it:
+Download from [**Releases**](https://github.com/siddarth1872004/phonemic/releases):
+
+| OS | Download |
+|---|---|
+| Windows | `PhoneMic-windows-x64.zip` (app + driver) |
+| Linux, any distro | `PhoneMic-x86_64.AppImage`, or the `.deb` / `.rpm`, or `PhoneMic-linux-x86_64.tar.gz` |
+| macOS | `PhoneMic-macos.zip` (universal: Apple silicon + Intel) |
+
+Or build it:
 
 ```sh
 git clone https://github.com/siddarth1872004/phonemic && cd phonemic
@@ -57,11 +66,11 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
 
 | OS | One-time setup | Pick this mic in your apps |
 |---|---|---|
-| **Windows** | Click **Set up microphone (VB-CABLE)** in the app, then reboot | `CABLE Output (VB-Audio Virtual Cable)` |
-| **Linux** | Nothing (needs `pactl`, which PulseAudio and PipeWire systems have) | `PhoneMic Microphone` |
-| **macOS*** | `brew install blackhole-2ch` | `BlackHole 2ch` |
+| **Windows 11** | Click **Install PhoneMic driver** in the app (explains and asks before enabling test mode), then restart | `PhoneMic Microphone` |
+| **Linux** | Nothing: created automatically through PipeWire or PulseAudio | `PhoneMic Microphone` |
+| **macOS** | Click **Install PhoneMic driver** in the app (asks for your password) | `PhoneMic Microphone` |
 
-<sub>* macOS builds in CI but is experimental.</sub>
+<sub>Until the Windows driver is signed by Microsoft it needs test mode (Secure Boot off). On Windows 10, or without test mode, the app's **Use VB-CABLE instead** button sets up VB-CABLE as a fallback.</sub>
 
 ## 🏗️ How it works
 
@@ -88,8 +97,10 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
 | [`pc-app/core/`](pc-app/core/) | Desktop engine: receiver pipeline, jitter buffer, adaptive playout, RNNoise, voice FX, audio devices, virtual mic, browser-mic server. |
 | [`pc-app/gui/`](pc-app/gui/) | **The desktop app**: Dear ImGui + GLFW, one small native binary. |
 | [`pc-app/tools/`](pc-app/tools/) | `phonemic-receiver` (headless) and `phonemic-softphone` (phone emulator for testing). |
-| [`pc-app/tests/`](pc-app/tests/) | 100 unit and integration tests (protocol fuzzing, crypto known-answer vectors, drift simulation, end-to-end UDP, TLS and USB, Opus FEC). |
-| [`pc-app/ipc/`](pc-app/ipc/) + [`pc-app/driver/`](pc-app/driver/) | Experimental ACX virtual-mic driver to replace VB-CABLE (builds in CI; unsigned, not yet tested on hardware). |
+| [`pc-app/tests/`](pc-app/tests/) | 103 unit and integration tests (protocol fuzzing, crypto known-answer vectors, drift simulation, end-to-end UDP, TLS and USB, Opus FEC, driver ring feeding). |
+| [`pc-app/driver/`](pc-app/driver/) + [`pc-app/ipc/`](pc-app/ipc/) | The Windows virtual-mic driver (ACX) and the shared-memory ring the app feeds it through. |
+| [`pc-app/driver-macos/`](pc-app/driver-macos/) | The macOS virtual-mic driver (Core Audio plug-in). |
+| [`packaging/linux/`](packaging/linux/) | Desktop entry, icon, AppStream metadata and the AppImage script. |
 | [`phone-app/`](phone-app/) | **The Android app**: Kotlin UI + C++/Oboe engine. |
 | [`web-client/`](web-client/) | The browser mic page (embedded into the desktop app at build time). |
 | [`docs/`](docs/) | Protocol, architecture, building, testing, and the [v0.2 → v0.3 audit](docs/AUDIT.md). |
@@ -100,12 +111,13 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
 ctest --test-dir build --output-on-failure
 ```
 
-CI runs the suite on Linux, Windows (MSVC) and macOS, plus an ASan/UBSan build, and builds the Android app with lint. Highlights:
+CI runs the suite on Linux, Windows (MSVC) and macOS, plus an ASan/UBSan build, builds the Android app with lint, and installs the Linux packages on five distros. Highlights:
 
 - the protocol decoder is fuzzed and never reads out of bounds;
 - crypto is pinned to known-answer vectors from *independent* implementations (reference Argon2, libsodium);
 - the playout buffer holds latency against ±300 ppm clock drift over 3 simulated minutes;
-- end-to-end tests over real UDP (discovery, status feedback, PIN rejection) and real TLS (page, pairing code, WebSocket audio).
+- end-to-end tests over real UDP (discovery, status feedback, PIN rejection) and real TLS (page, pairing code, WebSocket audio);
+- the virtual microphone itself: CI plays a tone into it and records it back, on Linux (PulseAudio, and PipeWire on Fedora) and on macOS with PhoneMic.driver installed.
 
 The browser client was also checked against the real server in headless Chromium with a fake microphone.
 
@@ -119,7 +131,9 @@ The browser client was also checked against the real server in headless Chromium
 - [x] Windows, Linux, macOS (experimental) desktop builds; Android in CI
 - [x] Opus codec (48 kbps, FEC + concealment)
 - [x] USB cable mode (`adb reverse`, set up automatically)
-- [ ] Native ACX virtual-mic driver (builds in CI; needs testing on Windows 11 + signing)
+- [x] Own virtual-mic driver on every OS (Windows ACX driver, macOS Core Audio plug-in, Linux PipeWire/PulseAudio)
+- [x] Portable Linux packages (AppImage, .deb, .rpm) for every glibc distro
+- [ ] Microsoft attestation signing for the Windows driver (no test mode needed)
 
 Bluetooth isn't planned. RFCOMM adds latency and stutters under load, and USB mode covers the case where Wi-Fi is unavailable or bad.
 

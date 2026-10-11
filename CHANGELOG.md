@@ -1,0 +1,36 @@
+# Changelog
+
+## 0.3.0 — 2026-10
+
+Full notes: [docs/releases/v0.3.0.md](docs/releases/v0.3.0.md). Bug list with
+causes: [docs/AUDIT.md](docs/AUDIT.md).
+
+### Added
+- PhoneMic's own virtual microphone, "PhoneMic Microphone", on every OS:
+  Windows ACX driver (with installer, local test-signing and uninstaller),
+  macOS Core Audio plug-in, Linux PipeWire/PulseAudio via libpulse (no pactl),
+  ALSA `snd-aloop` fallback. VB-CABLE and BlackHole are only fallbacks now.
+- Linux packages for every glibc distro: AppImage, .deb, .rpm, tarball;
+  native Wayland as well as X11; desktop entry, icon, AppStream metadata.
+- macOS release (universal app with the driver inside).
+- Opus compression with in-band FEC and packet-loss concealment.
+- USB cable mode (`adb reverse`, set up automatically).
+- LAN discovery ("Find my PC") and PC → phone status feedback.
+- Browser microphone built into the desktop app (HTTPS, QR code, pairing code).
+- Adaptive playout with clock-drift compensation.
+- `phonemic-vmic-check`: plays a tone into the virtual mic and checks it comes back.
+- CI: Linux, Windows, macOS, ASan/UBSan, Android, the Windows driver (WDK),
+  and package installs on Debian, Ubuntu, Fedora, Arch and openSUSE.
+
+### Changed
+- The desktop app is rewritten in C++17 (Dear ImGui + GLFW + miniaudio); one
+  protocol and crypto implementation (`shared/`) is compiled into both the phone
+  and the PC.
+
+### Fixed
+- About 60 bugs; see docs/AUDIT.md.
+
+## 0.2.0
+
+Windows desktop app (Rust) with VB-CABLE, Android app (Kotlin + C++/Oboe),
+Voice Focus, voice changer, PIN encryption.

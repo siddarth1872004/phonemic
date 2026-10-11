@@ -98,4 +98,16 @@ endif()
 # ---- macOS virtual microphone (Core Audio plug-in) ---------------------------------
 if(APPLE)
   add_subdirectory(driver-macos)
+  # Ship the driver inside PhoneMic.app so the app's "Install" button finds it.
+  if(TARGET PhoneMic)
+    add_dependencies(PhoneMic PhoneMicAudio)
+    add_custom_command(TARGET PhoneMic POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources
+      COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/PhoneMic.driver
+      # ditto keeps permissions and the code signature intact.
+      COMMAND ditto $<TARGET_BUNDLE_DIR:PhoneMicAudio> $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/PhoneMic.driver
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/driver-macos/install-driver.sh
+              $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/install-driver.sh
+      VERBATIM)
+  endif()
 endif()

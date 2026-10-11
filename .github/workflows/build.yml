@@ -102,8 +102,8 @@ jobs:
           - { distro: Debian 11, image: "debian:11", server: pulseaudio }
           - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pulseaudio }
           - { distro: Fedora 41, image: "fedora:41", server: pipewire }
-          - { distro: Arch Linux, image: "archlinux:latest", server: pulseaudio }
-          - { distro: openSUSE Tumbleweed, image: "opensuse/tumbleweed", server: pulseaudio }
+          - { distro: Arch Linux, image: "archlinux:latest", server: pipewire }
+          - { distro: openSUSE Tumbleweed, image: "opensuse/tumbleweed", server: pipewire }
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -123,9 +123,9 @@ jobs:
           elif command -v dnf >/dev/null; then
             dnf install -y ./dist/phonemic-*.rpm pipewire pipewire-pulseaudio wireplumber dbus-daemon
           elif command -v zypper >/dev/null; then
-            zypper --non-interactive install --allow-unsigned-rpm ./dist/phonemic-*.rpm pulseaudio
+            zypper --non-interactive install --allow-unsigned-rpm ./dist/phonemic-*.rpm pipewire pipewire-pulseaudio wireplumber dbus-1
           elif command -v pacman >/dev/null; then
-            pacman -Syu --noconfirm libglvnd libx11 pulseaudio
+            pacman -Syu --noconfirm libglvnd libx11 pipewire pipewire-pulse wireplumber dbus
             tar -xzf dist/PhoneMic-linux-x86_64.tar.gz -C /opt
             ln -s /opt/phonemic/bin/* /usr/local/bin/
           fi
@@ -143,9 +143,10 @@ jobs:
           pipewire & sleep 1; wireplumber & pipewire-pulse & sleep 3
           phonemic-vmic-check --setup
           SH
-            dbus-run-session -- sh /tmp/run.sh
+            if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
           else
-            pulseaudio -D --exit-idle-time=-1 --system=false || pulseaudio -D --exit-idle-time=-1
+            export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
+            pulseaudio -D --exit-idle-time=-1
             sleep 2
             phonemic-vmic-check --setup
           fi
@@ -311,11 +312,14 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
+          name: PhoneMic ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
           # Creates the release if it doesn't exist yet (the old workflow
           # failed unless someone had created it by hand first).
           files: |

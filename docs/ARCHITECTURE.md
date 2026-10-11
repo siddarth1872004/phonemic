@@ -43,8 +43,10 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
                 → AudioSinkIface::write(mic) [+ monitor]
                                  │
                 AudioOutput: AdaptivePlayout (SPSC ring + drift-steered resampler)
-                                 │  realtime miniaudio callback
-                     virtual cable / PulseAudio sink / BlackHole / speakers
+                                 │  realtime miniaudio callback, or on Windows
+                                 │  RingFeeder → shared ring → ACX driver
+                     PhoneMic Microphone (own driver / PipeWire / PulseAudio)
+                     · VB-CABLE or BlackHole fallback · speakers
 ```
 
 | Component | File |
@@ -57,11 +59,24 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
 | Voice effects | `pc-app/core/src/voice_fx.cpp` |
 | RNNoise wrapper | `pc-app/core/src/denoise.cpp` |
 | Audio devices (miniaudio) | `pc-app/core/src/audio_out.cpp` |
-| Virtual microphone per OS, VB-CABLE installer | `pc-app/core/src/virtual_mic.cpp` |
+| Virtual microphone per OS, driver installers | `pc-app/core/src/virtual_mic.cpp` |
+| Linux sound-server control (libpulse, loaded at run time) | `pc-app/core/src/pulse_ctl.cpp` |
 | Browser mic: HTTPS, WebSocket, certificate, QR | `pc-app/core/src/web_server.cpp`, `websocket.cpp` |
 | Settings, sockets, utilities | `settings.cpp`, `net.cpp`, `util.cpp` |
 | Window | `pc-app/gui/{main,app,ui}.cpp` |
-| Driver ring + experimental ACX driver | `pc-app/ipc/`, `pc-app/driver/` |
+| Windows driver (ACX) + its ring and feeder | `pc-app/driver/`, `pc-app/ipc/` |
+| macOS driver (Core Audio plug-in) | `pc-app/driver-macos/` |
+| Linux packaging | `packaging/linux/` |
+
+### Virtual microphone
+
+| OS | How | Apps record |
+|---|---|---|
+| Windows 11 | PhoneMic ACX driver; the app writes into the ring the driver creates | PhoneMic Microphone |
+| macOS | PhoneMic.driver loopback device; the app plays into its output side | PhoneMic Microphone |
+| Linux | PipeWire/PulseAudio null sink + remapped source, created through libpulse | PhoneMic Microphone |
+| Linux, ALSA only | the kernel's `snd-aloop` loopback card | Loopback device 1 |
+| Fallbacks | VB-CABLE (Windows 10 / no test mode), BlackHole (macOS) | their own names |
 
 ### Why these buffers
 

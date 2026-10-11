@@ -18,15 +18,3 @@ target_link_libraries(PhoneMicAudio PRIVATE "-framework CoreFoundation" "-framew
 add_custom_command(TARGET PhoneMicAudio POST_BUILD
   COMMAND codesign --force --sign - --timestamp=none $<TARGET_BUNDLE_DIR:PhoneMicAudio>
   VERBATIM)
-
-# Ship the driver inside PhoneMic.app so the app's "Install" button can find it.
-if(TARGET PhoneMic)
-  add_dependencies(PhoneMic PhoneMicAudio)
-  add_custom_command(TARGET PhoneMic POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources
-    COMMAND ${CMAKE_COMMAND} -E copy_directory $<TARGET_BUNDLE_DIR:PhoneMicAudio>
-            $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/PhoneMic.driver
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/install-driver.sh
-            $<TARGET_BUNDLE_CONTENT_DIR:PhoneMic>/Resources/install-driver.sh
-    VERBATIM)
-endif()
