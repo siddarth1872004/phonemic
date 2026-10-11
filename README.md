@@ -119,8 +119,9 @@ The browser client was also checked against the real server in headless Chromium
 - [x] Windows, Linux, macOS (experimental) desktop builds; Android in CI
 - [x] Opus codec (48 kbps, FEC + concealment)
 - [x] USB cable mode (`adb reverse`, set up automatically)
-- [ ] Bluetooth transport
 - [ ] Native ACX virtual-mic driver (builds in CI; needs testing on Windows 11 + signing)
+
+Bluetooth isn't planned. RFCOMM adds latency and stutters under load, and USB mode covers the case where Wi-Fi is unavailable or bad.
 
 ## 📄 License
 

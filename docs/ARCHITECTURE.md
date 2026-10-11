@@ -79,4 +79,4 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
 | Wi-Fi UDP (native app) | ✅ |
 | WebSocket over TLS (any browser) | ✅ built into the app |
 | USB cable (TCP via `adb reverse`, length-prefixed) | ✅ `pc-app/core/src/usb.cpp`; the app keeps `adb reverse` set up |
-| Bluetooth RFCOMM | planned |
+| Bluetooth RFCOMM | not planned: RFCOMM adds latency and stutters under load, and Wi-Fi plus USB already cover "no network" and "bad network" |
