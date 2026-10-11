@@ -123,6 +123,9 @@ PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device, _Out_ ACXCIRCUIT* Circuit)
     WDF_OBJECT_ATTRIBUTES attributes;
     ACX_PIN_CONFIG pinCfg;
     ACXPIN pins[2];
+    ACX_JACK_CONFIG jackCfg;
+    ACXJACK jack;
+    GUID categories[3];
     ACX_DATAFORMAT_CONFIG formatCfg;
     ACXDATAFORMAT format;
     KSDATAFORMAT_WAVEFORMATEXTENSIBLE ksFormat;
@@ -141,6 +144,17 @@ PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device, _Out_ ACXCIRCUIT* Circuit)
         return status;
     }
     AcxCircuitInitSetCircuitType(circuitInit, AcxCircuitTypeCapture);
+    // The categories the audio endpoint builder looks for: without AUDIO +
+    // CAPTURE (+ REALTIME for an RT stream) Windows creates no capture endpoint
+    // and apps never see the microphone.
+    categories[0] = KSCATEGORY_AUDIO;
+    categories[1] = KSCATEGORY_CAPTURE;
+    categories[2] = KSCATEGORY_REALTIME;
+    status = AcxCircuitInitAssignCategories(circuitInit, categories, ARRAYSIZE(categories));
+    if (!NT_SUCCESS(status)) {
+        AcxCircuitInitFree(circuitInit);
+        return status;
+    }
     status = AcxCircuitInitAssignAcxCreateStreamCallback(circuitInit, PhonemicEvtCircuitCreateStream);
     if (!NT_SUCCESS(status)) {
         AcxCircuitInitFree(circuitInit);
@@ -173,6 +187,26 @@ PhonemicCreateCaptureCircuit(_In_ WDFDEVICE Device, _Out_ ACXCIRCUIT* Circuit)
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     attributes.ParentObject = circuit;
     status = AcxPinCreate(circuit, &attributes, &pinCfg, &pins[1]);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    // A jack that is always plugged in (no presence detection): Windows hides
+    // endpoints whose jack reads "unplugged", so it must never look unplugged.
+    ACX_JACK_CONFIG_INIT(&jackCfg);
+    jackCfg.Description.ChannelMapping = KSAUDIO_SPEAKER_MONO;
+    jackCfg.Description.Color = 0;
+    jackCfg.Description.ConnectionType = AcxConnTypeOtherDigital;
+    jackCfg.Description.GeoLocation = AcxGeoLocNotApplicable;
+    jackCfg.Description.GenLocation = AcxGenLocOther;
+    jackCfg.Description.PortConnection = AcxPortConnIntegratedDevice;
+    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+    attributes.ParentObject = pins[1];
+    status = AcxJackCreate(pins[1], &attributes, &jackCfg, &jack);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    status = AcxPinAddJacks(pins[1], &jack, 1);
     if (!NT_SUCCESS(status)) {
         return status;
     }

@@ -55,8 +55,11 @@ public:
     void install_driver();
     // Look for the virtual microphone again (after installing a driver).
     void redetect_virtual_mic();
-#ifdef _WIN32
-    void install_vbcable();  // fallback
+    // Make PhoneMic the system's default microphone (apps without a picker).
+    void make_default_mic();
+#if defined(__linux__)
+    // Keep the mic registered when PhoneMic is closed.
+    void set_persistent_mic(bool on);
 #endif
 
     // ---- state the UI reads ----
@@ -67,6 +70,7 @@ public:
     std::vector<AudioDeviceInfo> devices;
     std::string bind_error, mic_error, monitor_error, web_error;
     bool mic_is_virtual = false;  // routing into the virtual microphone
+    DefaultMicState default_mic = DefaultMicState::Unknown;  // refreshed every few seconds
     Receiver::Snapshot snap;
     AdaptivePlayout::Stats mic_stats;
 
@@ -92,7 +96,7 @@ private:
 #ifdef PHONEMIC_HAVE_WEB
     std::unique_ptr<WebServer> web_;
 #endif
-    uint64_t dirty_at_ = 0, last_addr_refresh_ = 0;
+    uint64_t dirty_at_ = 0, last_addr_refresh_ = 0, last_default_check_ = 0;
     // Shared with the installer's background thread, which may outlive App.
     struct SetupState {
         std::mutex mu;

@@ -343,29 +343,35 @@ void output_card(App& app, UiState& ui) {
         }
         ImGui::TextWrapped("In Discord / Zoom / OBS choose the microphone:");
         ImGui::TextColored(kAccent, "%s", app.vmic.mic_name.c_str());
-        // Running on a third-party driver: offer PhoneMic's own.
-        if (app.vmic.third_party && can_install) {
-            ImGui::BeginDisabled(busy);
-            if (ImGui::SmallButton("Switch to the PhoneMic driver")) app.install_driver();
-            ImGui::EndDisabled();
+#if defined(__linux__)
+        if (app.vmic.can_persist) {
+            bool keep = app.vmic.persistent;
+            if (ImGui::Checkbox("Keep it when PhoneMic is closed", &keep)) app.set_persistent_mic(keep);
+            ImGui::SameLine();
+            ImGui::PushFont(ui.fonts.small);
+            ImGui::TextColored(kMuted, "apps opened before PhoneMic list it too");
+            ImGui::PopFont();
+        }
+#endif
+        // Apps without a microphone picker use the system default.
+        if (app.default_mic == DefaultMicState::Yes) {
+            muted_wrapped(ui, "It is also the default microphone, so apps without a microphone picker use it.");
+        } else if (app.default_mic == DefaultMicState::No) {
+            if (ImGui::SmallButton("Make it the default microphone")) app.make_default_mic();
+            ImGui::SameLine();
+            ImGui::PushFont(ui.fonts.small);
+            ImGui::TextColored(kMuted, "for apps without a mic picker");
+            ImGui::PopFont();
         }
     } else {
         status_dot(kAmber, S(ui, 5));
         ImGui::TextColored(kText, "No virtual microphone yet");
         if (!app.vmic.help.empty()) muted_wrapped(ui, app.vmic.help);
-        if (!app.vmic.ready) {
+        if (!app.vmic.ready && can_install) {
             ImGui::BeginDisabled(busy);
-            if (can_install) {
-                ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
-                if (ImGui::Button("Install PhoneMic driver")) app.install_driver();
-                ImGui::PopStyleColor();
-            }
-#ifdef _WIN32
-            // Fallback for Windows 10, or when test-signing isn't an option.
-            if (can_install) ImGui::SameLine();
-            if (ImGui::Button(can_install ? "Use VB-CABLE instead" : "Set up microphone (VB-CABLE)"))
-                app.install_vbcable();
-#endif
+            ImGui::PushStyleColor(ImGuiCol_Button, kAccent);
+            if (ImGui::Button("Install PhoneMic driver")) app.install_driver();
+            ImGui::PopStyleColor();
             ImGui::EndDisabled();
         }
     }
@@ -380,7 +386,7 @@ void output_card(App& app, UiState& ui) {
     if (ImGui::SmallButton("refresh list")) {
         // Look for the virtual mic again only if we don't have our own yet
         // (re-creating it would cut off apps that are recording it).
-        if (!app.vmic.ready || app.vmic.third_party) app.redetect_virtual_mic();
+        if (!app.vmic.ready) app.redetect_virtual_mic();
         else app.refresh_devices();
     }
     ImGui::PopFont();

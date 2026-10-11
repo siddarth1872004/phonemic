@@ -35,6 +35,7 @@ No extra hardware, no subscription, no Electron. Native code end to end: a C++ d
 | 🩺 **Tells you what's wrong** | The PC reports back to the phone: *connected / wrong PIN / PIN required / PC busy / not running / no network*. |
 | 🎧 **Hear yourself** | "Listen on this PC" monitors on any output while the mic keeps feeding your apps. |
 | 🎙️ **Its own virtual microphone** | "PhoneMic Microphone" on every OS, no third-party driver: an ACX driver on Windows 11, a Core Audio plug-in on macOS, PipeWire/PulseAudio on Linux. One click installs it. |
+| 🎯 **Shows up in every app** | Listed as a microphone everywhere; one click makes it the system default, so even apps without a mic picker use it. On Linux it can stay registered when PhoneMic is closed. |
 | 🐧 **Every Linux distro** | One portable build (glibc 2.28+, X11 and Wayland) as AppImage, `.deb` and `.rpm`; tested on Debian, Ubuntu, Fedora, Arch, openSUSE and Rocky Linux. |
 
 ## 🚀 Quick start
@@ -66,11 +67,13 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
 
 | OS | One-time setup | Pick this mic in your apps |
 |---|---|---|
-| **Windows 11** | Click **Install PhoneMic driver** in the app (explains and asks before enabling test mode), then restart | `PhoneMic Microphone` |
+| **Windows 11** (22H2+) | Click **Install PhoneMic driver** in the app (explains and asks before enabling test mode), then restart | `Microphone (PhoneMic Microphone)` |
 | **Linux** | Nothing: created automatically through PipeWire or PulseAudio | `PhoneMic Microphone` |
 | **macOS** | Click **Install PhoneMic driver** in the app (asks for your password) | `PhoneMic Microphone` |
 
-<sub>Until the Windows driver is signed by Microsoft it needs test mode (Secure Boot off). On Windows 10, or without test mode, the app's **Use VB-CABLE instead** button sets up VB-CABLE as a fallback.</sub>
+Apps without a microphone setting record the system default: click **Make it the default microphone** in the PhoneMic window.
+
+<sub>PhoneMic uses only its own microphone driver (no VB-CABLE or BlackHole). Until the Windows driver is signed by Microsoft it needs test mode (Secure Boot off); it needs Windows 11 22H2 or newer.</sub>
 
 ## 🏗️ How it works
 

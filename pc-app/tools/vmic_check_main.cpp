@@ -6,17 +6,24 @@
 //
 //   phonemic-vmic-check --setup          use the app's own virtual-mic setup
 //                                        (Linux: creates the PulseAudio/PipeWire
-//                                        devices; macOS: finds PhoneMic.driver)
+//                                        devices; macOS: finds PhoneMic.driver;
+//                                        Windows: feeds the PhoneMic driver)
+//   phonemic-vmic-check --setup --default
+//                                        also make PhoneMic the system's default
+//                                        microphone and record from *the default*
+//                                        device, like an app without a picker
 //   phonemic-vmic-check [--play NAME] [--capture NAME] [--seconds 3] [--list]
 //
-// Names match exactly, else as a substring. CI runs it on Linux (PulseAudio)
-// and on macOS after installing PhoneMic.driver.
+// Names match exactly, else as a substring. CI runs it on Linux (PulseAudio and
+// PipeWire) and on macOS after installing PhoneMic.driver. On Windows, run it
+// after installing the driver to check the whole path.
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -25,6 +32,9 @@
 #include "phonemic/audio_out.hpp"  // icontains
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
+#ifdef _WIN32
+#include "driver_feed.hpp"
+#endif
 
 namespace {
 
@@ -87,7 +97,7 @@ bool find(ma_device_info* list, ma_uint32 n, const std::string& name, ma_device_
 int main(int argc, char** argv) {
     std::string play_match = "PhoneMic", cap_match = "PhoneMic";
     double seconds = 3;
-    bool list_only = false, setup = false;
+    bool list_only = false, setup = false, use_default = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--play" && i + 1 < argc) play_match = argv[++i];
@@ -95,9 +105,10 @@ int main(int argc, char** argv) {
         else if (a == "--seconds" && i + 1 < argc) seconds = std::max(1.0, std::atof(argv[++i]));
         else if (a == "--list") list_only = true;
         else if (a == "--setup") setup = true;
+        else if (a == "--default") use_default = true;
         else {
-            std::fprintf(stderr,
-                         "usage: phonemic-vmic-check [--setup] [--play NAME] [--capture NAME] [--seconds N] [--list]\n");
+            std::fprintf(stderr, "usage: phonemic-vmic-check [--setup [--default]] [--play NAME] [--capture NAME] "
+                                 "[--seconds N] [--list]\n");
             return 2;
         }
     }
@@ -107,6 +118,11 @@ int main(int argc, char** argv) {
             if (on) phonemic::teardown_virtual_mic();
         }
     } teardown;
+    if (use_default && !setup) {
+        std::fprintf(stderr, "--default needs --setup\n");
+        return 2;
+    }
+    bool direct_feed = false;
     if (setup) {
         phonemic::EventLog log{20, true};
         const phonemic::VirtualMic vm = phonemic::setup_virtual_mic(&log);
@@ -117,7 +133,22 @@ int main(int argc, char** argv) {
         }
         play_match = vm.playback_match;
         cap_match = vm.mic_name;
-        std::printf("app setup: play into \"%s\", apps record \"%s\"\n", play_match.c_str(), cap_match.c_str());
+        direct_feed = vm.direct_feed;
+        std::printf("app setup: %s, apps record \"%s\"\n",
+                    direct_feed ? "feed the PhoneMic driver" : ("play into \"" + play_match + "\"").c_str(),
+                    cap_match.c_str());
+        if (use_default) {
+            std::string err;
+            if (!phonemic::make_default_mic(vm, &err)) {
+                std::fprintf(stderr, "FAIL: could not make it the default microphone: %s\n", err.c_str());
+                return 1;
+            }
+            if (phonemic::default_mic_state(vm) != phonemic::DefaultMicState::Yes) {
+                std::fprintf(stderr, "FAIL: the default microphone did not change\n");
+                return 1;
+            }
+            std::printf("PhoneMic is now the system's default microphone\n");
+        }
     }
 
     ma_context ctx;
@@ -138,15 +169,17 @@ int main(int argc, char** argv) {
     }
 
     ma_device_id play_id{}, cap_id{};
-    std::string play_name, cap_name;
-    if (!find(play_list, play_n, play_match, &play_id, &play_name) ||
+    std::string play_name = "the PhoneMic driver", cap_name = "the default microphone";
+    if ((!direct_feed && !find(play_list, play_n, play_match, &play_id, &play_name)) ||
         !find(cap_list, cap_n, cap_match, &cap_id, &cap_name)) {
         std::fprintf(stderr, "FAIL: no playback device \"%s\" + capture device \"%s\"\n", play_match.c_str(),
                      cap_match.c_str());
         ma_context_uninit(&ctx);
         return 1;
     }
-    std::printf("playing into \"%s\", recording \"%s\"\n", play_name.c_str(), cap_name.c_str());
+    if (use_default) cap_name = "the default microphone (" + cap_name + ")";
+    std::printf("playing into \"%s\", recording %s\n", play_name.c_str(),
+                use_default ? cap_name.c_str() : ("\"" + cap_name + "\"").c_str());
 
     Tone tone;
     Capture cap;
@@ -160,30 +193,70 @@ int main(int argc, char** argv) {
     pc.dataCallback = play_cb;
     pc.pUserData = &tone;
     ma_device_config cc = ma_device_config_init(ma_device_type_capture);
-    cc.capture.pDeviceID = &cap_id;
+    cc.capture.pDeviceID = use_default ? nullptr : &cap_id;  // nullptr = the system default
     cc.capture.format = ma_format_f32;
     cc.capture.channels = 1;
     cc.sampleRate = kRate;
     cc.dataCallback = capture_cb;
     cc.pUserData = &cap;
+    // Explicit 20 ms periods on both sides: backends choose much smaller ones for
+    // a "default device" stream, which can drop out on a busy CI machine.
+    pc.periodSizeInMilliseconds = 20;
+    cc.periodSizeInMilliseconds = 20;
 
     ma_device play, rec;
-    if (ma_device_init(&ctx, &pc, &play) != MA_SUCCESS) {
+    if (!direct_feed && ma_device_init(&ctx, &pc, &play) != MA_SUCCESS) {
         std::fprintf(stderr, "FAIL: could not open the playback side\n");
         return 1;
     }
     if (ma_device_init(&ctx, &cc, &rec) != MA_SUCCESS) {
         std::fprintf(stderr, "FAIL: could not open the capture side\n");
-        ma_device_uninit(&play);
+        if (!direct_feed) ma_device_uninit(&play);
         return 1;
     }
-    ma_device_start(&play);
+#ifdef _WIN32
+    // Windows driver: write the tone into its ring through the same path the
+    // app uses (DriverFeed paces it with the driver's clock).
+    std::unique_ptr<phonemic::DriverFeed> feed;
+    std::atomic<bool> feeding{true};
+    std::thread feeder;
+    if (direct_feed) {
+        std::string err;
+        feed = phonemic::DriverFeed::open(&err);
+        if (!feed) {
+            std::fprintf(stderr, "FAIL: could not open the PhoneMic driver: %s\n", err.c_str());
+            ma_device_uninit(&rec);
+            return 1;
+        }
+        feeder = std::thread([&] {
+            std::vector<float> chunk(480);
+            auto next = std::chrono::steady_clock::now();
+            while (feeding.load()) {
+                ma_device fake{};
+                fake.pUserData = &tone;
+                play_cb(&fake, chunk.data(), nullptr, static_cast<ma_uint32>(chunk.size()));
+                feed->write(chunk.data(), chunk.size());
+                next += std::chrono::milliseconds(10);
+                std::this_thread::sleep_until(next);
+            }
+        });
+    }
+#endif
+    if (!direct_feed) ma_device_start(&play);
     ma_device_start(&rec);
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
     ma_device_stop(&rec);
-    ma_device_stop(&play);
     ma_device_uninit(&rec);
-    ma_device_uninit(&play);
+    if (!direct_feed) {
+        ma_device_stop(&play);
+        ma_device_uninit(&play);
+    }
+#ifdef _WIN32
+    if (feeder.joinable()) {
+        feeding = false;
+        feeder.join();
+    }
+#endif
     ma_context_uninit(&ctx);
 
     const size_t got = cap.len.load(std::memory_order_acquire);

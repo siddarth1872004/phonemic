@@ -20,6 +20,7 @@ ctest --test-dir build --output-on-failure
 | `test_opus.cpp` | Opus round trip (pitch, < 70 kbps), receiver decoding, a dropped packet rebuilt from FEC, corrupt packet concealed |
 | `test_usb.cpp` | length-prefixed framing, real TCP stream → audio + STATUS, PIN policy over USB, listener unreachable from the LAN, process runner |
 | `test_websocket.cpp`, `test_settings.cpp` | SHA-1/Base64/RFC 6455 vectors, frame parser, settings round trip |
+| `test_persistent_mic.cpp` | Linux "keep the mic when PhoneMic is closed": PipeWire drop-in, PulseAudio block appended and removed byte-for-byte, refusal without a system config |
 | `test_ipc.cpp` | driver ring layout and SPSC rules; the feeder holding latency against a driver clock 300 ppm off for 3 simulated minutes; Windows: opening and feeding a stand-in for the driver's ring, version mismatch rejected |
 | `test_wire_c99.c` | the shared headers compile as strict C99 |
 
@@ -39,7 +40,14 @@ the tone comes back (level and spectrum). CI runs it:
   test suite also runs; and on Rocky Linux 8 (glibc 2.28, the oldest supported)
   the package install and the test suite.
 
-Run it yourself to check a setup: `phonemic-vmic-check --setup` (or `--list`).
+Every run is done twice: recording "PhoneMic Microphone" by name, and with
+`--default`, which makes PhoneMic the system's default microphone and records
+the *default* device, like an app without a microphone picker. The Linux job also
+turns on "keep it when PhoneMic is closed", restarts PulseAudio and checks the
+microphone is there without PhoneMic running.
+
+Run it yourself to check a setup: `phonemic-vmic-check --setup [--default]`
+(or `--list`). On Windows it feeds the PhoneMic driver and records its endpoint.
 
 ## Without a phone
 

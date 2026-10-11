@@ -27,11 +27,14 @@ public:
     uint32_t load_module(const std::string& name, const std::string& args);
     bool unload_module(uint32_t index);
     std::string server_name();  // e.g. "PulseAudio (on PipeWire 1.0.5)"
+    std::string default_source();  // name of the default recording device
+    bool set_default_source(const std::string& name);
 
     static constexpr uint32_t kInvalid = 0xFFFFFFFFu;
 
 private:
     PulseCtl() = default;
+    void query_server(std::string* name, std::string* default_source);
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
