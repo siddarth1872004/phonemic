@@ -35,7 +35,7 @@ No extra hardware, no subscription, no Electron. Native code end to end: a C++ d
 | 🩺 **Tells you what's wrong** | The PC reports back to the phone: *connected / wrong PIN / PIN required / PC busy / not running / no network*. |
 | 🎧 **Hear yourself** | "Listen on this PC" monitors on any output while the mic keeps feeding your apps. |
 | 🎙️ **Its own virtual microphone** | "PhoneMic Microphone" on every OS, no third-party driver: an ACX driver on Windows 11, a Core Audio plug-in on macOS, PipeWire/PulseAudio on Linux. One click installs it. |
-| 🐧 **Every Linux distro** | One portable build (glibc 2.28+, X11 and Wayland) as AppImage, `.deb` and `.rpm`; tested on Debian, Ubuntu, Fedora, Arch and openSUSE. |
+| 🐧 **Every Linux distro** | One portable build (glibc 2.28+, X11 and Wayland) as AppImage, `.deb` and `.rpm`; tested on Debian, Ubuntu, Fedora, Arch, openSUSE and Rocky Linux. |
 
 ## 🚀 Quick start
 
@@ -111,7 +111,7 @@ cmake --preset release && cmake --build --preset release     # see docs/BUILDING
 ctest --test-dir build --output-on-failure
 ```
 
-CI runs the suite on Linux, Windows (MSVC) and macOS, plus an ASan/UBSan build, builds the Android app with lint, and installs the Linux packages on five distros. Highlights:
+CI runs the suite on Linux, Windows (MSVC) and macOS, plus an ASan/UBSan build, builds the Android app with lint, and installs the Linux packages on six distros. Highlights:
 
 - the protocol decoder is fuzzed and never reads out of bounds;
 - crypto is pinned to known-answer vectors from *independent* implementations (reference Argon2, libsodium);

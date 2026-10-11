@@ -20,7 +20,7 @@ causes: [docs/AUDIT.md](docs/AUDIT.md).
 - Adaptive playout with clock-drift compensation.
 - `phonemic-vmic-check`: plays a tone into the virtual mic and checks it comes back.
 - CI: Linux, Windows, macOS, ASan/UBSan, Android, the Windows driver (WDK),
-  and package installs on Debian, Ubuntu, Fedora, Arch and openSUSE.
+  and package installs on Debian, Ubuntu, Fedora, Arch, openSUSE and Rocky Linux 8.
 
 ### Changed
 - The desktop app is rewritten in C++17 (Dear ImGui + GLFW + miniaudio); one

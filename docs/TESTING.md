@@ -34,9 +34,10 @@ the tone comes back (level and spectrum). CI runs it:
 
 - on Ubuntu with PulseAudio;
 - on macOS after installing PhoneMic.driver into Core Audio;
-- after installing the `.deb`/`.rpm`/tarball on Debian 11, Ubuntu 22.04,
-  Fedora 41 (PipeWire), Arch Linux and openSUSE Tumbleweed, where the test suite
-  also runs.
+- after installing the `.deb`/`.rpm`/tarball on Debian 12, Ubuntu 22.04,
+  Fedora 41, Arch Linux and openSUSE Tumbleweed, with PipeWire, where the test
+  suite also runs; and on Rocky Linux 8 (glibc 2.28, the oldest supported) the
+  package install and the test suite.
 
 Run it yourself to check a setup: `phonemic-vmic-check --setup` (or `--list`).
 

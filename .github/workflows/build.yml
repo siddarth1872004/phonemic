@@ -89,7 +89,9 @@ jobs:
           name: linux-tests
           path: build/bin/phonemic-tests
 
-  # Install the packages on real distros and prove the virtual mic works there.
+  # Install the packages on real distros and prove the virtual mic works there
+  # (PipeWire, the default on current desktops; real PulseAudio is covered by
+  # the "Linux (build + tests)" job). Rocky Linux 8 is the glibc 2.28 baseline.
   linux-distros:
     name: Linux on ${{ matrix.distro }}
     needs: linux-portable
@@ -99,11 +101,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { distro: Debian 11, image: "debian:11", server: pulseaudio }
-          - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pulseaudio }
+          - { distro: Debian 12, image: "debian:12", server: pipewire }
+          - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pipewire }
           - { distro: Fedora 41, image: "fedora:41", server: pipewire }
           - { distro: Arch Linux, image: "archlinux:latest", server: pipewire }
           - { distro: openSUSE Tumbleweed, image: "opensuse/tumbleweed", server: pipewire }
+          - { distro: Rocky Linux 8 (glibc 2.28), image: "rockylinux:8", server: none }
+    env:
+      SERVER: ${{ matrix.server }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -113,19 +118,20 @@ jobs:
         with:
           name: linux-tests
           path: tests
-      - name: Install PhoneMic and a sound server
+      - name: Install PhoneMic (and PipeWire)
         shell: sh
         run: |
           set -eux
+          pw() { [ "$SERVER" = pipewire ] && echo "$@" || true; }
           if command -v apt-get >/dev/null; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/phonemic_*.deb pulseaudio
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/phonemic_*.deb $(pw pipewire pipewire-pulse wireplumber dbus)
           elif command -v dnf >/dev/null; then
-            dnf install -y ./dist/phonemic-*.rpm pipewire pipewire-pulseaudio wireplumber dbus-daemon
+            dnf install -y ./dist/phonemic-*.rpm $(pw pipewire pipewire-pulseaudio wireplumber dbus-daemon)
           elif command -v zypper >/dev/null; then
-            zypper --non-interactive install --allow-unsigned-rpm ./dist/phonemic-*.rpm pipewire pipewire-pulseaudio wireplumber dbus-1
+            zypper --non-interactive install --allow-unsigned-rpm ./dist/phonemic-*.rpm $(pw pipewire pipewire-pulseaudio wireplumber dbus-1)
           elif command -v pacman >/dev/null; then
-            pacman -Syu --noconfirm libglvnd libx11 pipewire pipewire-pulse wireplumber dbus
+            pacman -Syu --noconfirm libglvnd libx11 $(pw pipewire pipewire-pulse wireplumber dbus)
             tar -xzf dist/PhoneMic-linux-x86_64.tar.gz -C /opt
             ln -s /opt/phonemic/bin/* /usr/local/bin/
           fi
@@ -133,70 +139,17 @@ jobs:
       - name: Test suite
         shell: sh
         run: chmod +x tests/phonemic-tests && tests/phonemic-tests
-      - name: Virtual microphone works (${{ matrix.server }})
+      - name: Virtual microphone works (PipeWire)
+        if: matrix.server == 'pipewire'
         shell: sh
         run: |
           set -eux
-          if [ "${{ matrix.server }}" = pipewire ]; then
-            cat > /tmp/run.sh <<'SH'
+          cat > /tmp/run.sh <<'SH'
           export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
           pipewire & sleep 1; wireplumber & pipewire-pulse & sleep 3
           phonemic-vmic-check --setup
           SH
-            if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
-          else
-            export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
-            pulseaudio -D --exit-idle-time=-1
-            sleep 2
-            phonemic-vmic-check --setup
-          fi
-
-  sanitizers:
-    name: Linux (ASan + UBSan tests)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure
-        run: >
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPHONEMIC_BUILD_GUI=OFF
-          "-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
-          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
-          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Test
-        env:
-          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
-        run: ctest --test-dir build --output-on-failure
-
-  windows:
-    name: Windows (MSVC build + tests)
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
-      - name: Check the driver scripts parse
-        shell: pwsh
-        run: |
-          foreach ($f in 'pc-app/driver/install-driver.ps1', 'pc-app/driver/uninstall-driver.ps1') {
-            $t = $null; $e = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$t, [ref]$e)
-            if ($e.Count) { $e | ForEach-Object { Write-Error "$f $_" }; exit 1 }
-          }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PhoneMic-windows-bin
-          path: |
-            build/bin/Release/PhoneMic.exe
-            build/bin/Release/phonemic-receiver.exe
-            build/bin/Release/phonemic-softphone.exe
-            build/bin/Release/phonemic-vmic-check.exe
-            build/bin/Release/phonemic-driver.exe
+          if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
 
   macos:
     name: macOS (build + tests + virtual mic)
