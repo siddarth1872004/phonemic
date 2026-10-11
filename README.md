@@ -1,145 +1,247 @@
-<div align="center">
+# PhoneMic
 
-# 🎙️ PhoneMic
+PhoneMic turns your phone into a wireless microphone for your computer. Speak
+into the phone and the audio arrives on the PC as a normal microphone,
+**PhoneMic Microphone**, that Discord, Zoom, Teams, OBS, browsers and every
+other app can select.
 
-**Turn your phone into a real wireless microphone for your PC.**
+It is free and open source, needs no extra hardware or account, and is native
+code throughout: a C++ desktop app for Windows, macOS and Linux, and an Android
+app with a C++ audio engine. Any phone can also connect through its web browser
+without installing anything.
 
-No extra hardware, no subscription, no Electron. Native code end to end: a C++ desktop app and a C++/Oboe Android engine that share one protocol implementation.
+## Features
 
-![Platform](https://img.shields.io/badge/PC-Windows%20%7C%20Linux%20%7C%20macOS-0078D4)
-![Platform](https://img.shields.io/badge/Phone-Android%2010%2B%20%7C%20any%20browser-3DDC84)
-![CI](https://github.com/siddarth1872004/phonemic/actions/workflows/build.yml/badge.svg)
-![C++](https://img.shields.io/badge/C%2B%2B-17-blue?logo=cplusplus)
-![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-green)
+**Connecting**
+- The Android app finds the PC on the local network by itself; no IP addresses
+  to type.
+- Browser mode: scan a QR code shown by the PC and the phone's browser becomes
+  the microphone (Android and iPhone).
+- USB cable mode for poor or blocked Wi-Fi: PhoneMic sets up the connection
+  over the cable automatically.
+- The PC reports its state back to the phone (connected, wrong PIN, PC busy,
+  not running), so problems are shown where you are looking.
 
-*Speak into your phone and it shows up as a microphone in Discord, Zoom, OBS, Teams, or any other desktop app.*
+**Audio**
+- Low latency: 10 ms packets, a lock-free audio path and a selectable buffer
+  from 20 to 150 ms.
+- Opus compression (about 48 kbps instead of 768 kbps) with forward error
+  correction that rebuilds lost packets.
+- Clock-drift compensation, so the delay does not creep up and there are no
+  periodic clicks during long calls.
+- Voice Focus noise removal (the phone's own suppressor plus RNNoise on the PC),
+  a voice changer, gain with a limiter that cannot clip, and mute from either
+  device.
+- "Listen on this PC" lets you monitor yourself on any output device.
 
-</div>
+**The microphone**
+- PhoneMic installs its own microphone on every operating system. No
+  third-party virtual audio cable is used or needed.
+- One click makes it the system's default microphone, so apps that have no
+  microphone setting use it too.
+- On Linux it can stay registered when PhoneMic is closed, like a hardware
+  microphone.
 
----
+**Security**
+- Optional encryption: the same PIN or passphrase on both devices gives
+  XChaCha20-Poly1305 with Argon2id-derived keys. With a PIN set, unencrypted
+  audio is refused.
+- Only one phone can feed the microphone at a time.
 
-## ✨ Features
+## Download
 
-| | |
+Get the latest version from the
+[Releases page](https://github.com/siddarth1872004/phonemic/releases).
+
+| Platform | File |
 |---|---|
-| 🔎 **Zero typing** | The phone app finds your PC on the Wi-Fi by itself ("Find my PC"). |
-| 🌐 **No app needed** | Or scan the QR code in the PC window: the phone's **browser** becomes the mic (Android and iPhone). |
-| 🔌 **USB cable mode** | Bad Wi-Fi? Plug the phone in: PhoneMic sets up `adb reverse` by itself and streams over the cable. |
-| 📦 **Opus compression** | ~48 kbps instead of 768 kbps raw PCM, with forward error correction that rebuilds lost packets. On by default; one switch in the app. |
-| 🚀 **Low latency** | 10 ms UDP frames, a lock-free audio path, a Wi-Fi low-latency lock on the phone, and a selectable buffer (20–150 ms). |
-| 🎚️ **Glitch-free over time** | Adaptive playout absorbs phone/PC clock drift (no creeping delay, no periodic clicks). The jitter buffer handles reordering and loss concealment. |
-| 🧹 **Voice Focus** | The phone's noise suppressor and echo canceller, then RNNoise on the PC. Removes fans, keyboards and room hiss. |
-| 🎭 **Voice changer** | Deep, Chipmunk, Robot, Radio, Echo; switch mid-call. |
-| 🔊 **Volume and mute** | Gain up to +18 dB with a limiter that can't clip, plus mute from the PC, the phone, or the phone's notification. |
-| 🔒 **Encryption** | Same PIN or passphrase on both ends gives XChaCha20-Poly1305 with Argon2id keys. With a PIN set, unauthenticated audio is refused. |
-| 🩺 **Tells you what's wrong** | The PC reports back to the phone: *connected / wrong PIN / PIN required / PC busy / not running / no network*. |
-| 🎧 **Hear yourself** | "Listen on this PC" monitors on any output while the mic keeps feeding your apps. |
-| 🎙️ **Its own virtual microphone** | "PhoneMic Microphone" on every OS, no third-party driver: an ACX driver on Windows 11, a Core Audio plug-in on macOS, PipeWire/PulseAudio on Linux. One click installs it. |
-| 🎯 **Shows up in every app** | Listed as a microphone everywhere; one click makes it the system default, so even apps without a mic picker use it. On Linux it can stay registered when PhoneMic is closed. |
-| 🐧 **Every Linux distro** | One portable build (glibc 2.28+, X11 and Wayland) as AppImage, `.deb` and `.rpm`; tested on Debian, Ubuntu, Fedora, Arch, openSUSE and Rocky Linux. |
+| Windows 11 | `PhoneMic-windows-x64.zip` (app and microphone driver) |
+| macOS 11 or newer | `PhoneMic-macos.zip` (Apple silicon and Intel) |
+| Linux, any distribution | `PhoneMic-x86_64.AppImage` |
+| Debian, Ubuntu, Mint | `phonemic_<version>_amd64.deb` |
+| Fedora, openSUSE, RHEL 8+ | `phonemic-<version>-1.x86_64.rpm` |
+| Linux, other | `PhoneMic-linux-x86_64.tar.gz` |
+| Android 10 or newer | `PhoneMic.apk` |
 
-## 🚀 Quick start
+## Getting started
 
-### 1 · PC
+### 1. Install PhoneMic on the computer
 
-Download from [**Releases**](https://github.com/siddarth1872004/phonemic/releases):
+- **Windows:** unzip `PhoneMic-windows-x64.zip` and run `PhoneMic.exe`. Keep the
+  `driver` folder next to it. Allow PhoneMic through the firewall on private
+  networks when Windows asks.
+- **macOS:** unzip and open `PhoneMic.app`. The first time, right-click it and
+  choose Open.
+- **Linux:** make the AppImage executable and run it, or install the `.deb` or
+  `.rpm` package.
 
-| OS | Download |
+### 2. Set up the microphone (once)
+
+| System | What to do |
 |---|---|
-| Windows | `PhoneMic-windows-x64.zip` (app + driver) |
-| Linux, any distro | `PhoneMic-x86_64.AppImage`, or the `.deb` / `.rpm`, or `PhoneMic-linux-x86_64.tar.gz` |
-| macOS | `PhoneMic-macos.zip` (universal: Apple silicon + Intel) |
+| Windows 11 | Click **Install PhoneMic driver** in the PhoneMic window, then restart when asked. |
+| macOS | Click **Install PhoneMic driver** and enter your password. |
+| Linux | Nothing. PhoneMic creates the microphone automatically through PipeWire or PulseAudio. |
 
-Or build it:
+On Windows the installer explains each step first. Until the driver is signed
+by Microsoft, Windows only loads it in test mode, which requires Secure Boot to
+be off. The installer asks before turning test mode on, and
+`uninstall-driver.ps1` reverses everything.
+
+### 3. Connect the phone
+
+- **Android app:** install `PhoneMic.apk`, tap **Find my PC**, then **Start**.
+  It keeps streaming with the screen off.
+- **Any phone, no app:** tick **Browser mic** in the PhoneMic window, scan the QR
+  code, accept the PC's own certificate once (Advanced, then Proceed) and tap
+  **Start mic**.
+- **USB cable:** enable USB debugging on the phone, tick **Stream over USB** in
+  the PC window, plug the phone in and turn on **USB cable** in the phone app.
+
+### 4. Choose the microphone in your apps
+
+Select **PhoneMic Microphone** in the app's audio settings. Windows lists it as
+**Microphone (PhoneMic Microphone)**. For apps without a microphone setting,
+click **Make it the default microphone** in the PhoneMic window.
+
+[START-HERE.md](START-HERE.md) has the same steps in more detail, with a
+troubleshooting table.
+
+## Requirements
+
+| | Minimum |
+|---|---|
+| Windows | Windows 11, version 22H2 (build 22621). Windows 10 is not supported. |
+| macOS | macOS 11. |
+| Linux | glibc 2.28 or newer (Debian 10, Ubuntu 18.10, RHEL 8 and later), X11 or Wayland, and PipeWire or PulseAudio. Plain ALSA systems can use the `snd-aloop` loopback module instead. |
+| Android | Android 10. |
+| Browser mode | A current browser on the phone, on the same network as the PC. |
+
+## Building from source
+
+The desktop app uses CMake 3.21+ and a C++17 compiler. All third-party code is
+fetched at pinned versions during configuration.
 
 ```sh
-git clone https://github.com/siddarth1872004/phonemic && cd phonemic
-cmake --preset release && cmake --build --preset release     # see docs/BUILDING.md
-./build/bin/PhoneMic                                          # Windows: build\bin\Release\PhoneMic.exe
+git clone https://github.com/siddarth1872004/phonemic
+cd phonemic
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
 ```
 
-### 2 · Phone (pick one)
+The binaries are placed in `build/bin/`. Linux needs the X11 and OpenGL
+development headers. The Android app is built from `phone-app/` with Android
+Studio or Gradle, and the Windows driver with the Windows Driver Kit. See
+[docs/BUILDING.md](docs/BUILDING.md) for every platform, the build options and
+how the release packages are made.
 
-- **Android app** (best latency, works with the screen off): install `PhoneMic.apk` from Releases, or build `phone-app/` in Android Studio. Tap **🔍 Find my PC**, then **Start**.
-- **Any phone's browser**: tick **Browser mic** in the PC window, scan the QR code, then tap *Advanced → Proceed* once (it's the PC's own certificate) and **Start mic**.
-
-### 3 · Use it as a microphone
-
-| OS | One-time setup | Pick this mic in your apps |
-|---|---|---|
-| **Windows 11** (22H2+) | Click **Install PhoneMic driver** in the app (explains and asks before enabling test mode), then restart | `Microphone (PhoneMic Microphone)` |
-| **Linux** | Nothing: created automatically through PipeWire or PulseAudio | `PhoneMic Microphone` |
-| **macOS** | Click **Install PhoneMic driver** in the app (asks for your password) | `PhoneMic Microphone` |
-
-Apps without a microphone setting record the system default: click **Make it the default microphone** in the PhoneMic window.
-
-<sub>PhoneMic uses only its own microphone driver (no VB-CABLE or BlackHole). Until the Windows driver is signed by Microsoft it needs test mode (Secure Boot off); it needs Windows 11 22H2 or newer.</sub>
-
-## 🏗️ How it works
+## How it works
 
 ```
- 📱 Android (C++ / Oboe)                          🖥️ PhoneMic desktop app (C++)
- ┌──────────────────────────────┐   Wi-Fi UDP   ┌───────────────────────────────────────────┐
- │ mic → lock-free ring          │ ────────────► │ decode (shared wire.h) → auth / decrypt   │
- │ sender thread: 10 ms frames,  │  10 ms frames │ → jitter buffer → Opus/PCM → FEC, PLC     │
- │ wire.h framing, XChaCha20 opt │ ◄──────────── │ → RNNoise → voice FX → gain/limiter       │
- └──────────────────────────────┘  STATUS 2 Hz  │ → adaptive playout (drift) → virtual mic  │
- 🌐 any browser ── HTTPS/WebSocket (pairing code) ─►  same pipeline                         │
-                                                 └───────────────────────────────────────────┘
+ Phone                                          Computer
+ +------------------------------+   Wi-Fi UDP   +-----------------------------------------+
+ | microphone -> lock-free ring | ------------> | decode -> authenticate / decrypt        |
+ | 10 ms frames, Opus, optional |   or USB      | -> jitter buffer -> Opus / PCM decode,  |
+ | encryption                   | <------------ |    loss concealment                     |
+ +------------------------------+  status 2 Hz  | -> noise removal -> effects -> limiter  |
+ Phone browser -- HTTPS / WebSocket ----------> | -> drift-compensated playout            |
+                                                | -> PhoneMic Microphone                  |
+                                                +-----------------------------------------+
 ```
 
-**The hot path is native.** Kotlin does the UI, permissions and lifecycle; it never touches audio. The realtime callbacks on both ends never lock, allocate, or make system calls.
+The audio path is native on both ends, and its realtime parts never lock,
+allocate memory or make system calls. On Android, Kotlin handles only the
+interface and the app lifecycle.
 
-**One protocol implementation.** [`shared/include/phonemic/wire.h`](shared/include/phonemic/wire.h) and [`crypto.h`](shared/include/phonemic/crypto.h) are compiled unchanged into the Android engine *and* the desktop app. See [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The wire protocol and the encryption live in two C headers
+([`wire.h`](shared/include/phonemic/wire.h),
+[`crypto.h`](shared/include/phonemic/crypto.h)) that are compiled unchanged into
+both the phone and the desktop app, so the two cannot drift apart. The protocol
+is documented in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-## 📁 Repository layout
+Each operating system gets its own microphone implementation:
 
-| Path | What it is |
+| System | Implementation |
 |---|---|
-| [`shared/`](shared/) | The wire protocol and encryption (C99 headers + monocypher), used by phone and PC. |
-| [`pc-app/core/`](pc-app/core/) | Desktop engine: receiver pipeline, jitter buffer, adaptive playout, RNNoise, voice FX, audio devices, virtual mic, browser-mic server. |
-| [`pc-app/gui/`](pc-app/gui/) | **The desktop app**: Dear ImGui + GLFW, one small native binary. |
-| [`pc-app/tools/`](pc-app/tools/) | `phonemic-receiver` (headless) and `phonemic-softphone` (phone emulator for testing). |
-| [`pc-app/tests/`](pc-app/tests/) | 103 unit and integration tests (protocol fuzzing, crypto known-answer vectors, drift simulation, end-to-end UDP, TLS and USB, Opus FEC, driver ring feeding). |
-| [`pc-app/driver/`](pc-app/driver/) + [`pc-app/ipc/`](pc-app/ipc/) | The Windows virtual-mic driver (ACX) and the shared-memory ring the app feeds it through. |
-| [`pc-app/driver-macos/`](pc-app/driver-macos/) | The macOS virtual-mic driver (Core Audio plug-in). |
-| [`packaging/linux/`](packaging/linux/) | Desktop entry, icon, AppStream metadata and the AppImage script. |
-| [`phone-app/`](phone-app/) | **The Android app**: Kotlin UI + C++/Oboe engine. |
-| [`web-client/`](web-client/) | The browser mic page (embedded into the desktop app at build time). |
-| [`docs/`](docs/) | Protocol, architecture, building, testing, and the [v0.2 → v0.3 audit](docs/AUDIT.md). |
+| Windows | A kernel-mode audio driver (WDF + ACX). The app writes audio into a shared-memory ring that the driver creates and reads on its own clock. |
+| macOS | A Core Audio plug-in (`PhoneMic.driver`): a loopback device loaded by the system audio service, with no kernel extension. |
+| Linux | A virtual sink and source created in PipeWire or PulseAudio through libpulse, which is loaded at run time. |
 
-## 🧪 Tests
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the design in detail.
+
+## Command-line tools
+
+The desktop download also includes:
+
+| Tool | Purpose |
+|---|---|
+| `phonemic-receiver` | The receiving engine without a window, for servers and scripts. `--make-default` makes PhoneMic the default microphone; on Linux, `--keep-mic on` keeps it registered when PhoneMic is closed. Run with `--help` for all options. |
+| `phonemic-softphone` | Emulates a phone for testing, including discovery, encryption and simulated packet loss. |
+| `phonemic-vmic-check` | Plays a test tone into the PhoneMic microphone and checks that it comes back out. `--setup --default` also checks the system default microphone. |
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `shared/` | Wire protocol and encryption (C99 headers and monocypher), used by the phone and the PC. |
+| `pc-app/core/` | Desktop engine: receive pipeline, buffers, DSP, audio devices, virtual microphone, browser-mic server. |
+| `pc-app/gui/` | The desktop app's window (Dear ImGui and GLFW). |
+| `pc-app/tools/` | The command-line tools. |
+| `pc-app/tests/` | Unit and integration tests. |
+| `pc-app/driver/`, `pc-app/ipc/` | The Windows microphone driver and the shared ring the app feeds it through. |
+| `pc-app/driver-macos/` | The macOS microphone driver. |
+| `phone-app/` | The Android app (Kotlin interface, C++ and Oboe audio engine). |
+| `web-client/` | The browser microphone page, embedded in the desktop app at build time. |
+| `packaging/linux/` | Desktop entry, icon, AppStream metadata and the AppImage script. |
+| `docs/` | Protocol, architecture, building, testing, release notes and the audit of the 0.2 codebase. |
+
+## Testing
 
 ```sh
 ctest --test-dir build --output-on-failure
 ```
 
-CI runs the suite on Linux, Windows (MSVC) and macOS, plus an ASan/UBSan build, builds the Android app with lint, and installs the Linux packages on six distros. Highlights:
+The test suite covers the protocol (including fuzzing), the encryption
+(against known-answer vectors from independent implementations), the buffers
+under simulated clock drift, and end-to-end transfers over UDP, TLS and USB.
 
-- the protocol decoder is fuzzed and never reads out of bounds;
-- crypto is pinned to known-answer vectors from *independent* implementations (reference Argon2, libsodium);
-- the playout buffer holds latency against ±300 ppm clock drift over 3 simulated minutes;
-- end-to-end tests over real UDP (discovery, status feedback, PIN rejection) and real TLS (page, pairing code, WebSocket audio);
-- the virtual microphone itself: CI plays a tone into it and records it back, on Linux (PulseAudio, and PipeWire on Fedora) and on macOS with PhoneMic.driver installed.
+Continuous integration builds and tests on Linux, Windows and macOS, runs the
+suite under AddressSanitizer and UndefinedBehaviorSanitizer, builds the Android
+app and the Windows driver, and installs the Linux packages on Debian, Ubuntu,
+Fedora, Arch Linux, openSUSE and Rocky Linux. On Linux and macOS it also plays
+a tone into the real PhoneMic microphone and checks that it comes back out,
+both by name and as the system default. See [docs/TESTING.md](docs/TESTING.md).
 
-The browser client was also checked against the real server in headless Chromium with a fake microphone.
+## Known limitations
 
-## 🗺️ Roadmap
+- The Windows driver needs test mode until it is attestation-signed by
+  Microsoft, which requires an EV code-signing certificate and a Partner Center
+  account.
+- The Windows driver is built and packaged in CI but has not yet been tested on
+  a wide range of hardware. Reports are welcome.
+- Linux distributions without glibc, such as Alpine, need a source build.
+- There is no Bluetooth transport. USB mode covers the case where Wi-Fi is
+  unavailable, with lower latency than Bluetooth.
 
-- [x] Wi-Fi UDP transport, jitter buffer, loss concealment, drift compensation
-- [x] Voice Focus, voice changer, gain/limiter, mute
-- [x] Encryption (Argon2id + XChaCha20-Poly1305), sender lock
-- [x] LAN auto-discovery and PC → phone status feedback
-- [x] Browser mic built into the app (QR code + pairing code)
-- [x] Windows, Linux, macOS (experimental) desktop builds; Android in CI
-- [x] Opus codec (48 kbps, FEC + concealment)
-- [x] USB cable mode (`adb reverse`, set up automatically)
-- [x] Own virtual-mic driver on every OS (Windows ACX driver, macOS Core Audio plug-in, Linux PipeWire/PulseAudio)
-- [x] Portable Linux packages (AppImage, .deb, .rpm) for every glibc distro
-- [ ] Microsoft attestation signing for the Windows driver (no test mode needed)
+## Documentation
 
-Bluetooth isn't planned. RFCOMM adds latency and stutters under load, and USB mode covers the case where Wi-Fi is unavailable or bad.
+- [START-HERE.md](START-HERE.md): step-by-step setup and troubleshooting
+- [CHANGELOG.md](CHANGELOG.md) and [docs/releases/](docs/releases/): release history
+- [docs/BUILDING.md](docs/BUILDING.md): building on every platform
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): design and components
+- [docs/PROTOCOL.md](docs/PROTOCOL.md): the wire protocol
+- [docs/TESTING.md](docs/TESTING.md): automated and manual testing
+- [docs/AUDIT.md](docs/AUDIT.md): problems found in 0.2 and how they were fixed
+- [pc-app/driver/README.md](pc-app/driver/README.md) and
+  [pc-app/driver-macos/README.md](pc-app/driver-macos/README.md): the microphone drivers
 
-## 📄 License
+## License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE). Third-party components are fetched at build time under their own licenses: monocypher (BSD-2/CC0), RNNoise (BSD-3), miniaudio (MIT-0/public domain), Dear ImGui (MIT), GLFW (zlib), Mbed TLS (Apache-2.0), QR Code generator (MIT), Opus (BSD-3).
+PhoneMic is dual-licensed under the [MIT License](LICENSE-MIT) and the
+[Apache License 2.0](LICENSE-APACHE); you may use it under either.
+
+Third-party components fetched at build time keep their own licenses:
+monocypher (BSD-2-Clause or CC0), RNNoise (BSD-3-Clause), Opus (BSD-3-Clause),
+miniaudio (MIT-0 or public domain), Dear ImGui (MIT), GLFW (zlib), Mbed TLS
+(Apache-2.0) and QR Code generator (MIT).

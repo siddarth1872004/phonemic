@@ -35,6 +35,9 @@
 #define kDeviceName        "PhoneMic Microphone"
 #define kManufacturer      "PhoneMic"
 
+// kAudioObjectPropertyElementMain (macOS 12+; it was ...ElementMaster before).
+#define kElementMain ((AudioObjectPropertyElement)0)
+
 enum {
     kObjectID_PlugIn = kAudioObjectPlugInObject,  // 1
     kObjectID_Device = 2,
@@ -755,7 +758,7 @@ static OSStatus PM_SetPropertyData(AudioServerPlugInDriverRef inDriver, AudioObj
                 if (changed && gHost) {
                     AudioObjectPropertyAddress changedAddr = {kAudioStreamPropertyIsActive,
                                                               kAudioObjectPropertyScopeGlobal,
-                                                              kAudioObjectPropertyElementMain};
+                                                              kElementMain};
                     gHost->PropertiesChanged(gHost, inObjectID, 1, &changedAddr);
                 }
                 return kAudioHardwareNoError;
