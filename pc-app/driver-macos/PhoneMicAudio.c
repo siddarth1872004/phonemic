@@ -284,7 +284,7 @@ static OSStatus PM_PerformDeviceConfigurationChange(AudioServerPlugInDriverRef i
     if (inDriver != gDriverRef) return kAudioHardwareBadObjectError;
     if (inDeviceObjectID != kObjectID_Device) return kAudioHardwareBadObjectError;
     const Float64 rate = (Float64)inChangeAction;
-    if (!IsSupportedRate(rate)) return kAudioHardwareBadValueError;
+    if (!IsSupportedRate(rate)) return kAudioDeviceUnsupportedFormatError;
     pthread_mutex_lock(&gStateMutex);
     gSampleRate = rate;
     gPendingSampleRate = 0;
