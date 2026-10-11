@@ -212,12 +212,12 @@ TEST(rx_web_source_is_trusted_even_with_pin) {
     Rig r;
     r.rx.set_passphrase("pin");
     SourceId web;
-    web.web = true;
-    web.web_conn = 1;
+    web.via = SourceId::Via::Web;
+    web.conn_id = 1;
     const auto p = audio_packet(11, 0, tone(0));
     CHECK_EQ(r.rx.submit(web, p.data(), p.size(), true), PM_STATUS_OK);
     CHECK_EQ(r.mic.got.size(), 480u);
-    r.rx.release_web(1);
+    r.rx.release_conn(1);
     CHECK(!r.rx.snapshot().connected);
 }
 

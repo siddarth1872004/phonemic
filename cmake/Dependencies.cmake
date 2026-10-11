@@ -4,6 +4,7 @@
 #   miniaudio  — audio output on WASAPI / PulseAudio / ALSA / CoreAudio, with
 #                built-in sample-rate + channel conversion (single header).
 #   imgui+glfw — the native desktop window (no web view, no Electron).
+#   opus       — optional compression + loss concealment on the wire.
 #   rnnoise    — Voice Focus noise removal (the 2018 model, bundled weights).
 #   qrcodegen  — QR code for the browser-mic link.
 #   mbedtls    — TLS for the browser-mic server (browsers require HTTPS for the
@@ -31,6 +32,20 @@ endif()
 if(APPLE)
   target_link_libraries(miniaudio INTERFACE "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
 endif()
+
+# ---- opus --------------------------------------------------------------------
+# Optional compression (~48 kbps instead of 768 kbps PCM) with real packet-loss
+# concealment and in-band FEC. Plain CMake build; the DNN extras stay off.
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(opus
+  GIT_REPOSITORY https://github.com/xiph/opus.git
+  GIT_TAG        v1.5.2
+  GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(opus)
 
 # ---- rnnoise -----------------------------------------------------------------
 if(PHONEMIC_WITH_RNNOISE)

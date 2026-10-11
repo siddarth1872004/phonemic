@@ -75,5 +75,5 @@ The native engine (`phone-app/native`) compiles `shared/` directly, so protocol
 and crypto are always identical to the desktop app's.
 
 ## Driver (experimental)
-See [pc-app/driver/README.md](../pc-app/driver/README.md). It needs the WDK and
-is not part of the CMake build.
+See [pc-app/driver/README.md](../pc-app/driver/README.md). It needs the WDK (or
+the WDK NuGet package, as CI uses) and is not part of the CMake build.

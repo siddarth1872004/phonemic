@@ -73,11 +73,13 @@ class StreamingService : Service() {
         val port = intent.getIntExtra(EXTRA_PORT, Discovery.DEFAULT_PORT)
         voiceFocus = intent.getBooleanExtra(EXTRA_VOICE_FOCUS, true)
         val pin = intent.getStringExtra(EXTRA_PIN) ?: ""
+        val opus = intent.getBooleanExtra(EXTRA_OPUS, true)
+        val usb = intent.getBooleanExtra(EXTRA_USB, false)
 
         // Must be foreground within a few seconds of startForegroundService().
         startInForeground(getString(R.string.status_connecting))
 
-        val rc = NativeBridge.start(ip, port, pin, voiceFocus)
+        val rc = NativeBridge.start(ip, port, pin, voiceFocus, opus, usb)
         if (rc != NativeBridge.OK) {
             lastError = rc
             running = false
@@ -86,7 +88,8 @@ class StreamingService : Service() {
         }
         lastError = NativeBridge.OK
         running = true
-        target = "$ip:$port"
+        target = if (usb) "USB" else "$ip:$port"
+        usbMode = usb
         muted = false
         NativeBridge.setMuted(false)
         acquireWifiLock()
@@ -144,6 +147,8 @@ class StreamingService : Service() {
         const val EXTRA_PORT = "pc_port"
         const val EXTRA_VOICE_FOCUS = "voice_focus"
         const val EXTRA_PIN = "pin"
+        const val EXTRA_OPUS = "opus"
+        const val EXTRA_USB = "usb"
         const val ACTION_STOP = "com.phonemic.STOP"
         const val ACTION_TOGGLE_MUTE = "com.phonemic.TOGGLE_MUTE"
         private const val CHANNEL_ID = "phonemic_streaming"
@@ -157,6 +162,8 @@ class StreamingService : Service() {
         @Volatile var lastError = NativeBridge.OK
             private set
         @Volatile var target = ""
+            private set
+        @Volatile var usbMode = false
             private set
 
         fun clearError() {

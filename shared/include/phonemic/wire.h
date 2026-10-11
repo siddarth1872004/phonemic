@@ -25,7 +25,7 @@
  *    12     4   seq           per-session packet counter, starts at 0
  *    16     8   timestamp_us  sender's monotonic capture clock
  *    24     4   sample_rate   Hz of the PCM (receiver resamples if != 48000)
- *    28   ...   payload       mono PCM16 LE (or ciphertext||tag)
+ *    28   ...   payload       mono PCM16 LE, or one Opus packet (or ciphertext||tag)
  *
  * HELLO (kind 1, phone -> broadcast UDP:4010): discovery probe, 12 bytes.
  *     4     4   nonce         echoed in the ANNOUNCE so replies can be matched
@@ -72,7 +72,7 @@ extern "C" {
 #define PM_KIND_STATUS      3
 
 #define PM_CODEC_PCM16      0
-#define PM_CODEC_OPUS       1 /* reserved; not produced or accepted yet */
+#define PM_CODEC_OPUS       1 /* one Opus packet per 10 ms frame, decoded at 48 kHz */
 
 #define PM_FLAG_ENCRYPTED   0x01
 

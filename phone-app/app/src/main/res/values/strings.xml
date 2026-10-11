@@ -28,6 +28,9 @@
     <string name="status_connected">Connected</string>
     <string name="status_connected_fmt">Connected — the PC is playing your mic (buffer %1$d ms)</string>
     <string name="status_no_reply">Sending, but the PC isn\'t answering. Check the address and allow PhoneMic through the PC\'s firewall.</string>
+    <string name="usb">USB cable</string>
+    <string name="usb_desc">Stream over the cable instead of Wi-Fi. Needs USB debugging on (Developer options) and \"Stream over USB\" ticked in PhoneMic on the PC.</string>
+    <string name="status_usb_waiting">Waiting for the USB link — plug in the cable, allow USB debugging, and tick \"Stream over USB\" in PhoneMic on the PC.</string>
     <string name="status_no_network">No network — is Wi-Fi on?</string>
     <string name="status_pc_not_running">The PC is reachable but PhoneMic isn\'t running on it.</string>
     <string name="status_pin_required">The PC requires a PIN. Stop, enter it, and start again.</string>
@@ -39,7 +42,11 @@
     <string name="err_audio">Couldn\'t open the microphone (is another app using it?).</string>
     <string name="err_socket">Couldn\'t open a network connection.</string>
     <string name="err_crypto">Not enough memory to set up encryption.</string>
-    <string name="stats_fmt">%1$.1f kHz  ·  %2$d packets sent  ·  %3$.1f%% lost</string>
+    <string name="stats_fmt">%1$s  ·  %2$d packets sent  ·  %3$.1f%% lost</string>
+    <string name="codec_opus">Opus</string>
+    <string name="codec_pcm">%1$.1f kHz PCM</string>
+    <string name="opus">Compression (Opus)</string>
+    <string name="opus_desc">15× less Wi-Fi data and smoother on weak signal. Turn off only for the very lowest latency on a strong network.</string>
 
     <string name="notif_channel">PhoneMic streaming</string>
     <string name="notif_title">PhoneMic is using your microphone</string>

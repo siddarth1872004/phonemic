@@ -97,6 +97,7 @@ Settings Settings::load(const fs::path& file) {
     if (auto v = get("mic_device")) s.mic_device = *v;
     if (auto v = get("monitor_device")) s.monitor_device = *v;
     if (auto v = get("latency_ms")) s.latency_ms = to_num<int>(*v, s.latency_ms, 10, 500);
+    if (auto v = get("usb_enabled")) s.usb_enabled = to_bool(*v, s.usb_enabled);
     if (auto v = get("web_enabled")) s.web_enabled = to_bool(*v, s.web_enabled);
     if (auto v = get("web_port")) s.web_port = to_num<uint16_t>(*v, s.web_port, 1, 65535);
     if (auto v = get("web_token")) s.web_token = *v;
@@ -117,6 +118,7 @@ bool Settings::save(const fs::path& file) const {
     o << "mic_device=" << mic_device << "\n";
     o << "monitor_device=" << monitor_device << "\n";
     o << "latency_ms=" << latency_ms << "\n";
+    o << "usb_enabled=" << (usb_enabled ? 1 : 0) << "\n";
     o << "web_enabled=" << (web_enabled ? 1 : 0) << "\n";
     o << "web_port=" << web_port << "\n";
     o << "web_token=" << web_token << "\n";

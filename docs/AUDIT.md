@@ -3,7 +3,7 @@
 This is the list of problems found reviewing the v0.2 code base (Rust desktop
 app, Android app, browser client, driver, CI and docs). Every item notes how
 v0.3 addresses it. Items are grouped by severity. All of them have regression
-tests where it's practical (`pc-app/tests`, 92 tests).
+tests where it's practical (`pc-app/tests`, now 100 tests).
 
 v0.3 also moves the desktop app from Rust to **C++17** (see the end of this file).
 
@@ -76,7 +76,7 @@ v0.3 also moves the desktop app from Rust to **C++17** (see the end of this file
 | 46 | `Run` failed if the app wasn't running yet; the timer re-armed relative 10 ms (drift). | Silence plus a PASSIVE work item that retries the mapping; absolute schedule from the packet count. |
 | 47 | The INF lacked the KS/WDMAUDIO registration that audio drivers need. | Added. |
 
-The driver still has **not been compiled** (no WDK in CI) and is labelled as such.
+The driver now compiles and links in CI against the WDK 10.0.26100 headers (ACX 1.0, KMDF 1.33). It has **not been loaded** on real Windows yet and is labelled as such.
 
 ## Build, CI and docs
 

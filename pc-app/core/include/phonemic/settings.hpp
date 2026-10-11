@@ -24,6 +24,7 @@ struct Settings {
     std::string mic_device;            // empty = auto (virtual cable if present)
     std::string monitor_device;        // empty = system default
     int latency_ms = 40;               // playout buffer target
+    bool usb_enabled = false;          // keep `adb reverse` set up for USB mode
     bool web_enabled = false;          // built-in browser-mic server
     uint16_t web_port = 8443;
     std::string web_token;             // generated on first use

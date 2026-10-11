@@ -11,6 +11,7 @@
 #include "phonemic/net.hpp"
 #include "phonemic/receiver.hpp"
 #include "phonemic/settings.hpp"
+#include "phonemic/usb.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
 #ifdef PHONEMIC_HAVE_WEB
@@ -39,6 +40,10 @@ public:
     void select_monitor_device(const std::string& name);  // "" = system default
     void set_latency_ms(int ms);
     void set_web_enabled(bool on);
+    void set_usb_enabled(bool on);
+    AdbBridge::State usb_state() const { return adb_.state(); }
+    std::string usb_device() const { return adb_.device(); }
+    bool usb_listening() const { return usb_->running(); }
     void new_web_token();
     void refresh_devices();
     void refresh_addresses();
@@ -71,6 +76,8 @@ private:
     void mark_dirty() { dirty_at_ = mono_ms(); }
 
     std::unique_ptr<Receiver> rx_;
+    std::unique_ptr<UsbIngest> usb_;
+    AdbBridge adb_{&log};
     AudioOutput mic_out_, mon_out_;
 #ifdef PHONEMIC_HAVE_WEB
     std::unique_ptr<WebServer> web_;

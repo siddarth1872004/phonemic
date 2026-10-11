@@ -6,15 +6,21 @@ samples, that publishes one capture circuit: a streaming pin plus a
 "microphone" bridge pin. The capture stream is fed from the shared-memory ring
 (../ipc/ring.h) that the PhoneMic desktop app fills (phonemic-receiver --driver).
 
-STATUS: experimental and NOT yet compiled — there is no WDK in the project's
-CI. The structure follows the ACX RT-stream model; expect to adjust details to
-your WDK's acx.h when building (see README.md).
+STATUS: experimental. CI compiles and links it against the WDK 10.0.26100
+headers (ACX 1.0, KMDF 1.33), but it has never been loaded or run on Windows
+(see README.md).
 --*/
 #pragma once
 
 #include <ntddk.h>
 #include <wdf.h>
 #include <acx.h>
+// Same include order portcls.h uses for kernel audio: windef + mmreg (for
+// WAVEFORMATEXTENSIBLE) before the KS headers.
+#include <windef.h>
+#define NOBITMAP
+#include <mmreg.h>
+#undef NOBITMAP
 #include <ks.h>
 #include <ksmedia.h>
 

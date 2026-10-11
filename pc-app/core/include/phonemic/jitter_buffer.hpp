@@ -53,6 +53,10 @@ public:
     Pop pop();
     Pop pop_ready(uint32_t reorder_depth);
 
+    // Payload of the frame the cursor points at, if it has arrived (used to
+    // recover a lost frame from the next packet's forward error correction).
+    const std::vector<uint8_t>* peek_next() const;
+
     void reset();
     uint32_t len() const { return len_; }
     bool empty() const { return len_ == 0; }

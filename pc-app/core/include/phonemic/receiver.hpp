@@ -30,6 +30,7 @@
 #include "phonemic/dsp.hpp"
 #include "phonemic/jitter_buffer.hpp"
 #include "phonemic/net.hpp"
+#include "phonemic/opus_codec.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/voice_fx.hpp"
 
@@ -45,14 +46,16 @@ public:
     virtual uint32_t buffered_ms() const { return 0; }
 };
 
-// Identifies a sender: a UDP endpoint, or a browser connection.
+// Identifies a sender: a UDP endpoint, a browser connection, or a phone on a
+// USB cable (TCP through `adb reverse`).
 struct SourceId {
-    bool web = false;
-    net::Endpoint ep;          // UDP sender (web: the browser's address)
-    uint64_t web_conn = 0;     // web connection id
+    enum class Via : uint8_t { Udp, Web, Usb };
+    Via via = Via::Udp;
+    net::Endpoint ep;          // sender address (USB: 127.0.0.1)
+    uint64_t conn_id = 0;      // browser / USB connection id
     uint32_t session = 0;      // from the packet
     bool same_sender(const SourceId& o) const {
-        return web == o.web && ep == o.ep && web_conn == o.web_conn && session == o.session;
+        return via == o.via && ep == o.ep && conn_id == o.conn_id && session == o.session;
     }
     std::string describe() const;
 };
@@ -92,8 +95,8 @@ public:
     // pairing token), so plaintext is acceptable even when a PIN is set.
     // Returns a PM_STATUS_* code describing what happened.
     uint8_t submit(const SourceId& src, const uint8_t* data, size_t len, bool trusted);
-    // A browser connection closed: release the mic if it owned it.
-    void release_web(uint64_t web_conn);
+    // A browser / USB connection closed: release the mic if it owned it.
+    void release_conn(uint64_t conn_id);
 
     // Optional hook called for every accepted audio packet (latency measurement).
     using PacketObserver = std::function<void(const pm_audio_header&, uint64_t arrival_wall_us)>;
@@ -109,9 +112,13 @@ public:
         bool connected = false;      // packets from the active sender within 1.5 s
         std::string peer;            // active sender
         bool peer_is_web = false;
+        bool peer_is_usb = false;
+        uint32_t session_received = 0, session_lost = 0;
         bool encrypted = false;
         uint8_t sender_version = 0;  // 1 = legacy app
         uint32_t sample_rate = 0;
+        bool opus = false;           // the sender compresses with Opus
+        uint64_t fec_recovered = 0;  // lost frames rebuilt from Opus FEC
         uint64_t datagrams = 0, packets = 0, lost = 0, malformed = 0;
         uint64_t rejected = 0;
         uint8_t last_reject = PM_STATUS_OK;
@@ -169,6 +176,8 @@ private:
     uint32_t active_rate_ = PM_SAMPLE_RATE;
     bool active_encrypted_ = false;
     uint8_t active_version_ = 0;
+    uint8_t active_codec_ = PM_CODEC_PCM16;
+    OpusVoiceDecoder opus_;
     JitterBuffer jitter_{64, 0};
     Resampler resampler_;
     Concealer concealer_;
@@ -196,7 +205,8 @@ private:
     std::atomic<uint8_t> last_reject_{PM_STATUS_OK};
     std::atomic<bool> legacy_encrypted_{false};
     std::atomic<float> peak_{0.0f}, vad_{0.0f};
-    std::atomic<uint32_t> session_received_{0}, session_lost_{0};
+    std::atomic<uint32_t> session_received_{0}, session_lost_{0}, session_fec_{0};
+    std::atomic<uint64_t> fec_recovered_{0};
     std::string last_reject_peer_;  // under pipe_mu_
 };
 

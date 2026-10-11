@@ -52,4 +52,5 @@ The phone and the PC both tell you what's wrong. The most common cases:
 | Phone: *"The PIN doesn't match"* | Type the same PIN on both. (A PIN is optional; leave both empty if you don't need encryption.) |
 | PC: *"PhoneMic is already running"* | Close the other PhoneMic window, or choose another port and click Retry. |
 | No "CABLE Output" in Discord | VB-CABLE isn't installed yet or needs a reboot: redo step 2. |
+| Wi-Fi is bad or blocked | Use the cable: on the phone enable **Developer options → USB debugging**, tick **Stream over USB** in the PC window (needs Android *platform-tools*, i.e. `adb`), plug in, allow debugging, turn on **USB cable** in the phone app and tap Start. |
 | Audio is choppy | Pick a bigger **buffer** in the PC window (e.g. "Stable Wi-Fi (80 ms)"), or move closer to the router. |

@@ -23,6 +23,12 @@ void JitterBuffer::reset() {
     started_ = false;
 }
 
+const std::vector<uint8_t>* JitterBuffer::peek_next() const {
+    if (!next_seq_) return nullptr;
+    const auto& slot = slots_[slot_of(*next_seq_)];
+    return slot ? &*slot : nullptr;
+}
+
 std::optional<uint32_t> JitterBuffer::earliest_buffered() const {
     if (!next_seq_) return std::nullopt;
     for (uint32_t i = 0; i < capacity_; ++i) {

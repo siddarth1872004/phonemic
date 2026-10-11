@@ -28,6 +28,9 @@ App::App() {
     rx_->set_monitor_sink(&mon_out_);
     restart_receiver();
 
+    usb_ = std::make_unique<UsbIngest>(rx_.get(), &log);
+    if (settings.usb_enabled) set_usb_enabled(true);
+
 #ifdef PHONEMIC_HAVE_WEB
     web_ = std::make_unique<WebServer>(rx_.get(), &log);
     if (settings.web_enabled) set_web_enabled(true);
@@ -35,6 +38,8 @@ App::App() {
 }
 
 App::~App() {
+    adb_.stop();
+    if (usb_) usb_->stop();
 #ifdef PHONEMIC_HAVE_WEB
     if (web_) web_->stop();
 #endif
@@ -173,6 +178,19 @@ void App::set_web_enabled(bool on) {
     std::string err;
     if (!web_->start(settings.web_port, settings.web_token, &err)) web_error = err;
 #endif
+}
+
+void App::set_usb_enabled(bool on) {
+    settings.usb_enabled = on;
+    mark_dirty();
+    if (!on) {
+        adb_.stop();
+        usb_->stop();
+        return;
+    }
+    std::string err;
+    if (!usb_->running() && !usb_->start(settings.port, &err)) log.add("USB: " + err);
+    adb_.start(settings.port);
 }
 
 void App::new_web_token() {

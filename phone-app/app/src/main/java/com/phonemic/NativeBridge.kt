@@ -30,7 +30,8 @@ object NativeBridge {
     const val PC_UNSUPPORTED = 5
 
     /** Open the mic and stream to [pcIp]:[pcPort]. Returns [OK] or an ERR_ code. */
-    external fun start(pcIp: String, pcPort: Int, pin: String, voiceFocus: Boolean): Int
+    /** [usb] = stream over the USB cable (TCP via `adb reverse`); [pcIp] is ignored then. */
+    external fun start(pcIp: String, pcPort: Int, pin: String, voiceFocus: Boolean, opus: Boolean, usb: Boolean): Int
 
     /** Stop streaming and release the mic. Idempotent. */
     external fun stop()
@@ -51,6 +52,9 @@ object NativeBridge {
     external fun streamGeneration(): Int
 
     external fun sampleRate(): Int
+
+    /** True if the running stream is Opus-compressed (false = raw PCM). */
+    external fun isOpus(): Boolean
 
     /** Latest PC feedback state (PC_*), or -1 if the PC hasn't reported yet. */
     external fun pcState(): Int

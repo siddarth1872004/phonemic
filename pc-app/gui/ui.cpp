@@ -171,9 +171,11 @@ void connect_card(App& app, UiState& ui) {
     if (s.connected) {
         dot = kGreen;
         char buf[256];
-        std::snprintf(buf, sizeof buf, "Connected — %s  ·  %s  ·  %.1f kHz", s.peer.c_str(),
-                      s.peer_is_web ? "browser (TLS)" : (s.encrypted ? "encrypted" : "not encrypted"),
-                      s.sample_rate / 1000.0);
+        char codec[32];
+        if (s.opus) std::snprintf(codec, sizeof codec, "Opus");
+        else std::snprintf(codec, sizeof codec, "%.1f kHz PCM", s.sample_rate / 1000.0);
+        std::snprintf(buf, sizeof buf, "Connected — %s  ·  %s  ·  %s", s.peer.c_str(),
+                      s.peer_is_web ? "browser (TLS)" : (s.encrypted ? "encrypted" : "not encrypted"), codec);
         text = buf;
         if (s.sender_version == PM_VERSION_LEGACY) text += "  ·  old phone app — please update";
     } else if (recent_reject) {
@@ -256,7 +258,10 @@ void level_card(App& app, UiState& ui) {
     ImGui::PushFont(ui.fonts.small);
     if (s.connected) {
         const double loss = (s.packets + s.lost) ? 100.0 * static_cast<double>(s.lost) / static_cast<double>(s.packets + s.lost) : 0.0;
-        ImGui::TextColored(kMuted, "loss %.1f%%  ·  jitter %.1f ms  ·  buffer %.0f ms%s", loss, s.jitter_ms,
+        char fec[48] = "";
+        if (s.opus && s.fec_recovered)
+            std::snprintf(fec, sizeof fec, "  ·  %llu rebuilt by FEC", static_cast<unsigned long long>(s.fec_recovered));
+        ImGui::TextColored(kMuted, "loss %.1f%%%s  ·  jitter %.1f ms  ·  buffer %.0f ms%s", loss, fec, s.jitter_ms,
                            app.mic_stats.fill_ms,
                            app.settings.voice_focus && Denoiser::available() && s.voice_prob > 0.6f ? "  ·  voice" : "");
     } else {
@@ -442,6 +447,49 @@ void browser_card(App& app, UiState& ui) {
 #endif
 }
 
+void usb_card(App& app, UiState& ui) {
+    begin_card(ui, "usb");
+    section_label(ui, "USB CABLE (ANDROID)");
+    bool on = app.settings.usb_enabled;
+    if (ImGui::Checkbox("Stream over USB", &on)) app.set_usb_enabled(on);
+    ImGui::SameLine();
+    ImGui::PushFont(ui.fonts.small);
+    ImGui::TextColored(kMuted, "for bad or no Wi-Fi");
+    ImGui::PopFont();
+    if (app.settings.usb_enabled) {
+        ImVec4 dot = kAmber;
+        std::string text;
+        switch (app.usb_state()) {
+            case AdbBridge::State::Starting:
+                text = "Looking for adb…";
+                break;
+            case AdbBridge::State::NoAdb:
+                dot = kRed;
+                text = "adb wasn't found. Install Android \"platform-tools\" (or Android Studio) and restart PhoneMic.";
+                break;
+            case AdbBridge::State::NoDevice:
+                text = "Plug in the phone with USB debugging enabled (Settings → Developer options).";
+                break;
+            case AdbBridge::State::Unauthorized:
+                text = "Unlock the phone and tap \"Allow USB debugging\".";
+                break;
+            case AdbBridge::State::Ready:
+                dot = kGreen;
+                text = "Ready: " + app.usb_device() + ". In the phone app turn on \"USB cable\" and tap Start.";
+                break;
+        }
+        if (!app.usb_listening()) {
+            dot = kRed;
+            text = "Couldn't listen for USB connections (port in use?).";
+        }
+        status_dot(dot, S(ui, 5));
+        ImGui::PushStyleColor(ImGuiCol_Text, dot.x == kGreen.x ? kText : dot);
+        ImGui::TextWrapped("%s", text.c_str());
+        ImGui::PopStyleColor();
+    }
+    end_card(ui);
+}
+
 void activity(App& app, UiState& ui) {
     ImGui::PushFont(ui.fonts.small);
     const auto& s = app.snap;
@@ -559,6 +607,7 @@ void draw_ui(App& app, UiState& ui) {
     voice_card(app, ui);
     output_card(app, ui);
     browser_card(app, ui);
+    usb_card(app, ui);
     activity(app, ui);
     ImGui::End();
 }

@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "phonemic/net.hpp"
+#include "phonemic/opus_codec.hpp"
 #include "phonemic/util.hpp"
 
 using namespace phonemic;
@@ -76,7 +77,7 @@ int main(int argc, char** argv) {
     if (const char* e = std::getenv("PHONEMIC_PORT")) port = static_cast<uint16_t>(std::atoi(e));
     uint32_t rate = 48000;
     double freq = 440, loss = 0, reorder = 0, seconds = 0;
-    bool do_discover = false, wallclock = false;
+    bool do_discover = false, wallclock = false, opus = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> std::string {
@@ -92,10 +93,11 @@ int main(int argc, char** argv) {
         else if (a == "--seconds") seconds = std::stod(next());
         else if (a == "--discover") do_discover = true;
         else if (a == "--wallclock") wallclock = true;
+        else if (a == "--opus") opus = true;
         else if (a[0] != '-') target = a;
         else {
             std::puts("usage: phonemic-softphone [PC_IP] [--discover] [--port N] [--pin TEXT] [--rate HZ]\n"
-                      "                          [--freq HZ] [--loss PCT] [--reorder PCT] [--seconds S]\n"
+                      "                          [--freq HZ] [--loss PCT] [--reorder PCT] [--seconds S] [--opus]\n"
                       "                          [--wallclock (timestamps for receiver --measure)]");
             return a == "--help" ? 0 : 2;
         }
@@ -116,13 +118,20 @@ int main(int argc, char** argv) {
     const uint32_t session = random_u32_nonzero();
     uint8_t key[32];
     if (!pin.empty() && pm_derive_key(pin.data(), pin.size(), session, key) != 0) return 1;
+    if (opus && rate != 48000) {
+        std::fprintf(stderr, "--opus needs --rate 48000\n");
+        return 2;
+    }
+    OpusVoiceEncoder encoder(48000);
+    if (opus && !encoder.ok()) { std::fprintf(stderr, "opus encoder init failed\n"); return 1; }
     const size_t frame = rate / 100;
-    std::printf("softphone -> %s  (%u Hz, 10 ms frames, %.0f Hz tone%s, session %08x)\n", dest.to_string().c_str(),
-                rate, freq, pin.empty() ? "" : ", encrypted", session);
+    std::printf("softphone -> %s  (%u Hz, 10 ms frames, %.0f Hz tone, %s%s, session %08x)\n", dest.to_string().c_str(),
+                rate, freq, opus ? "Opus" : "PCM", pin.empty() ? "" : ", encrypted", session);
 
     std::mt19937 rng(session);
     std::uniform_real_distribution<double> uni(0, 1);
-    std::vector<uint8_t> pcm(frame * 2), pkt(PM_MAX_DATAGRAM), held;
+    std::vector<uint8_t> pcm(frame * 2), pkt(PM_MAX_DATAGRAM), held, enc(1500);
+    std::vector<int16_t> samples(frame);
     double phase = 0;
     uint32_t seq = 0, sent = 0;
     auto next_tick = std::chrono::steady_clock::now();
@@ -132,24 +141,33 @@ int main(int argc, char** argv) {
         if (seconds > 0 && std::chrono::steady_clock::now() - start > std::chrono::duration<double>(seconds)) break;
         for (size_t i = 0; i < frame; ++i) {
             const int16_t v = static_cast<int16_t>(std::sin(phase) * 8000);
+            samples[i] = v;
             phase += 6.283185307179586 * freq / rate;
             pcm[2 * i] = static_cast<uint8_t>(v & 0xFF);
             pcm[2 * i + 1] = static_cast<uint8_t>((static_cast<uint16_t>(v) >> 8) & 0xFF);
         }
+        const uint8_t* body = pcm.data();
+        size_t body_len = pcm.size();
+        if (opus) {
+            const int n = encoder.encode(samples.data(), static_cast<int>(frame), enc.data(), static_cast<int>(enc.size()));
+            if (n <= 0) { std::fprintf(stderr, "opus encode failed\n"); return 1; }
+            body = enc.data();
+            body_len = static_cast<size_t>(n);
+        }
         pm_audio_header h{};
-        h.codec = PM_CODEC_PCM16;
+        h.codec = opus ? PM_CODEC_OPUS : PM_CODEC_PCM16;
         h.session_id = session;
         h.seq = seq++;
         h.timestamp_us = wallclock ? wall_us() : mono_us();
         h.sample_rate = rate;
         size_t n;
         if (pin.empty()) {
-            n = static_cast<size_t>(pm_encode_audio(pkt.data(), pkt.size(), &h, pcm.data(), pcm.size()));
+            n = static_cast<size_t>(pm_encode_audio(pkt.data(), pkt.size(), &h, body, body_len));
         } else {
             h.flags = PM_FLAG_ENCRYPTED;
-            h.payload_len = static_cast<uint16_t>(pcm.size() + PM_TAG_LEN);
+            h.payload_len = static_cast<uint16_t>(body_len + PM_TAG_LEN);
             pm_write_audio_header(pkt.data(), &h);
-            pm_seal(key, pkt.data(), PM_AUDIO_HEADER_LEN, session, h.seq, h.timestamp_us, pcm.data(), pcm.size(),
+            pm_seal(key, pkt.data(), PM_AUDIO_HEADER_LEN, session, h.seq, h.timestamp_us, body, body_len,
                     pkt.data() + PM_AUDIO_HEADER_LEN);
             n = PM_AUDIO_HEADER_LEN + h.payload_len;
         }

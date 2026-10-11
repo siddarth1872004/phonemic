@@ -9,6 +9,12 @@ real server. If this document and the headers disagree, the headers win.
 ## Transport
 
 - Native app → PC: **UDP**, default port **4010**. One datagram = one packet.
+- Native app → PC over a **USB cable**: TCP through `adb reverse` (the phone
+  connects to its own `127.0.0.1:4010`; the PC app runs
+  `adb reverse tcp:4010 tcp:<pc port>` and listens on `127.0.0.1` only). TCP has no
+  message boundaries, so every packet is prefixed with its length as a
+  little-endian u16: `[len][datagram]`. The PC replies with framed STATUS
+  packets on the same connection. Same packets, same encryption rules as UDP.
 - Browser → PC: **WebSocket over TLS** (`wss://<pc>:8443/ws?t=<pairing code>`),
   one binary message = one AUDIO packet (no encryption flag: TLS covers it).
 
@@ -28,15 +34,22 @@ off size field
 ## AUDIO (phone → PC), 28-byte header
 
 ```
- 4   1   codec         0 = PCM16 (1 = Opus, reserved)
+ 4   1   codec         0 = PCM16, 1 = Opus
  5   1   flags         bit0 = encrypted; other bits must be 0
  6   2   payload_len   bytes after the header (incl. 16-byte tag if encrypted)
  8   4   session_id    random per stream start, never 0
 12   4   seq           per session, from 0
 16   8   timestamp_us  sender media clock: capture start + samples_sent / rate
 24   4   sample_rate   8000..96000 Hz (the PC resamples to 48 kHz)
-28  ...  payload       mono PCM16 LE, normally 10 ms (480 samples at 48 kHz)
+28  ...  payload       mono PCM16 LE, normally 10 ms (480 samples at 48 kHz),
+                        or one Opus packet encoding 10 ms
 ```
+
+**Opus (codec 1):** VOIP mode, 48 kbps, in-band FEC on. The PC always decodes at
+48 kHz (`sample_rate` is informational). When a packet is lost the PC rebuilds
+it from the *next* packet's FEC data when present (libopus adds it to roughly a
+third of voice frames at this bitrate), otherwise from Opus's own concealment.
+A session keeps one codec; a codec change starts a new session.
 
 `decode` is total: length ≥ 28, magic, version, kind, codec, flags, session ≠ 0,
 rate in range, and `payload_len` must *exactly* equal the bytes present

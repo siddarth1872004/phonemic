@@ -38,6 +38,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statsText: TextView
     private lateinit var levelBar: LinearProgressIndicator
     private lateinit var voiceFocus: MaterialSwitch
+    private lateinit var opusSwitch: MaterialSwitch
+    private lateinit var usbSwitch: MaterialSwitch
     private lateinit var toggle: MaterialButton
     private lateinit var muteButton: MaterialButton
 
@@ -71,6 +73,8 @@ class MainActivity : AppCompatActivity() {
         statsText = findViewById(R.id.statsText)
         levelBar = findViewById(R.id.levelBar)
         voiceFocus = findViewById(R.id.voiceFocusSwitch)
+        opusSwitch = findViewById(R.id.opusSwitch)
+        usbSwitch = findViewById(R.id.usbSwitch)
         toggle = findViewById(R.id.toggleButton)
         muteButton = findViewById(R.id.muteButton)
         findViewById<TextView>(R.id.versionText).text = getString(R.string.version_fmt, BuildConfig.VERSION_NAME)
@@ -79,6 +83,9 @@ class MainActivity : AppCompatActivity() {
         ipInput.setText(prefs.getString("ip", ""))
         pinInput.setText(prefs.getString("pin", ""))
         voiceFocus.isChecked = prefs.getBoolean("voice_focus", true)
+        opusSwitch.isChecked = prefs.getBoolean("opus", true)
+        usbSwitch.isChecked = prefs.getBoolean("usb", false)
+        usbSwitch.setOnCheckedChangeListener { _, _ -> ipLayout.error = null }
 
         ipLayout.setEndIconOnClickListener { findPc() }
         ipInput.setOnEditorActionListener { _, action, _ ->
@@ -130,17 +137,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startStreaming() {
+        val usb = usbSwitch.isChecked
         val raw = ipInput.text?.toString().orEmpty()
-        if (raw.isBlank()) {
+        if (!usb && raw.isBlank()) {
             findPc()
             return
         }
-        val (ip, port) = parseTarget(raw) ?: return
+        val (ip, port) = if (usb) "127.0.0.1" to Discovery.DEFAULT_PORT else parseTarget(raw) ?: return
         val pin = pinInput.text?.toString()?.trim().orEmpty()
         // allowBackup is off, so this stays on the device.
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("ip", raw.trim()).putString("pin", pin)
-            .putBoolean("voice_focus", voiceFocus.isChecked).apply()
+            .putBoolean("voice_focus", voiceFocus.isChecked)
+            .putBoolean("opus", opusSwitch.isChecked)
+            .putBoolean("usb", usb).apply()
 
         StreamingService.clearError()
         startRequestedAt = System.currentTimeMillis()
@@ -149,11 +159,13 @@ class MainActivity : AppCompatActivity() {
             .putExtra(StreamingService.EXTRA_PORT, port)
             .putExtra(StreamingService.EXTRA_VOICE_FOCUS, voiceFocus.isChecked)
             .putExtra(StreamingService.EXTRA_PIN, pin)
+            .putExtra(StreamingService.EXTRA_OPUS, opusSwitch.isChecked)
+            .putExtra(StreamingService.EXTRA_USB, usb)
         ContextCompat.startForegroundService(this, intent)
     }
 
     private fun findPc() {
-        if (searching || StreamingService.running) return
+        if (searching || StreamingService.running || usbSwitch.isChecked) return
         searching = true
         ipLayout.helperText = getString(R.string.searching)
         Thread {
@@ -194,10 +206,12 @@ class MainActivity : AppCompatActivity() {
         muteButton.visibility = if (running) View.VISIBLE else View.GONE
         muteButton.text = getString(if (StreamingService.muted) R.string.unmute else R.string.mute)
         muteButton.backgroundTintList = ColorStateList.valueOf(getColor(if (StreamingService.muted) R.color.red else R.color.control))
-        ipInput.isEnabled = !running
+        ipInput.isEnabled = !running && !usbSwitch.isChecked
+        usbSwitch.isEnabled = !running
         pinInput.isEnabled = !running
         voiceFocus.isEnabled = !running
-        ipLayout.isEndIconVisible = !running
+        opusSwitch.isEnabled = !running
+        ipLayout.isEndIconVisible = !running && !usbSwitch.isChecked
 
         val st = StatusText.current()
         statusText.text = if (st.text == R.string.status_connected)
@@ -220,7 +234,9 @@ class MainActivity : AppCompatActivity() {
             val lost = NativeBridge.pcLost()
             val recv = NativeBridge.pcReceived()
             val lossPct = if (recv + lost > 0) 100.0 * lost / (recv + lost) else 0.0
-            statsText.text = getString(R.string.stats_fmt, NativeBridge.sampleRate() / 1000.0, sent, lossPct)
+            val codec = if (NativeBridge.isOpus()) getString(R.string.codec_opus)
+            else getString(R.string.codec_pcm, NativeBridge.sampleRate() / 1000.0)
+            statsText.text = getString(R.string.stats_fmt, codec, sent, lossPct)
         } else {
             levelBar.setProgressCompat(0, true)
             statsText.text = ""

@@ -1,7 +1,7 @@
 /*++
 PhoneMic virtual audio capture driver (WDF + ACX).
 
-See driver.h for STATUS (experimental, not yet compiled). Flow:
+See driver.h for STATUS (experimental: builds in CI, never loaded). Flow:
 
     DriverEntry ─ AcxDriverInitialize
       └─ PhonemicEvtDeviceAdd ─ AcxDeviceInitInitialize / AcxDeviceInitialize
@@ -358,7 +358,7 @@ PhonemicEvtStreamAllocateRtPackets(
         }
         RtlZeroMemory(ctx->PacketVa[i], PacketSize);
         ACX_RTPACKET_INIT(&packets[i]);
-        packets[i].RtPacketBuffer = mdl;
+        WDF_MEMORY_DESCRIPTOR_INIT_MDL(&packets[i].RtPacketBuffer, mdl, PacketSize);
         packets[i].RtPacketOffset = 0;
         packets[i].RtPacketSize = PacketSize;
     }

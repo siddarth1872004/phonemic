@@ -97,6 +97,28 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  driver:
+    name: Windows driver (WDK, experimental)
+    runs-on: windows-2022
+    # Compile + link check only (unsigned, never loaded). Releases don't wait on it.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+      - name: Fetch ACX headers + import library (the runner's WDK lacks them)
+        shell: pwsh
+        run: nuget install Microsoft.Windows.WDK.x64 -Version 10.0.26100.6584 -OutputDirectory "$env:RUNNER_TEMP\nuget" -NonInteractive
+      - name: Build phonemic.sys
+        shell: pwsh
+        run: >
+          msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
+          /p:PhonemicSkipInf=true /m /v:minimal
+          "/p:PhonemicAcxRoot=$env:RUNNER_TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: PhoneMic-driver-unsigned
+          path: pc-app/driver/x64/Release/
+
   android:
     name: Android app
     runs-on: ubuntu-24.04

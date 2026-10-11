@@ -494,8 +494,8 @@ void WebServer::serve(int fd, std::string peer_ip) {
 
     const uint64_t conn_id = next_conn_id_.fetch_add(1);
     SourceId src;
-    src.web = true;
-    src.web_conn = conn_id;
+    src.via = SourceId::Via::Web;
+    src.conn_id = conn_id;
     net::Endpoint::parse(peer_ip, 0, &src.ep);
 
     ws::FrameParser parser(PM_MAX_DATAGRAM);
@@ -531,7 +531,7 @@ void WebServer::serve(int fd, std::string peer_ip) {
             } else if (fr.opcode == ws::kClose) {
                 const auto c = ws::encode_frame(ws::kClose, fr.payload.data(), std::min<size_t>(fr.payload.size(), 2));
                 tls.write_all(c.data(), c.size());
-                rx_->release_web(conn_id);
+                rx_->release_conn(conn_id);
                 return;
             } else if (fr.opcode == ws::kText || fr.opcode == ws::kPong) {
                 // ignored
@@ -546,7 +546,7 @@ void WebServer::serve(int fd, std::string peer_ip) {
         if (n > 0) parser.feed(buf, static_cast<size_t>(n));
         if (stop_.load()) break;
     }
-    rx_->release_web(conn_id);
+    rx_->release_conn(conn_id);
 }
 
 }  // namespace phonemic

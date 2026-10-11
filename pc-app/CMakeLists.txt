@@ -6,16 +6,19 @@ add_library(phonemic_core STATIC
   core/src/jitter_buffer.cpp
   core/src/miniaudio_impl.c
   core/src/net.cpp
+  core/src/opus_codec.cpp
   core/src/playout.cpp
+  core/src/process.cpp
   core/src/receiver.cpp
   core/src/settings.cpp
+  core/src/usb.cpp
   core/src/util.cpp
   core/src/virtual_mic.cpp
   core/src/voice_fx.cpp
   core/src/websocket.cpp
 )
 target_include_directories(phonemic_core PUBLIC core/include ipc)
-target_link_libraries(phonemic_core PUBLIC phonemic_shared PRIVATE miniaudio)
+target_link_libraries(phonemic_core PUBLIC phonemic_shared opus PRIVATE miniaudio)
 target_compile_definitions(phonemic_core PUBLIC PHONEMIC_VERSION="${PROJECT_VERSION}")
 
 if(PHONEMIC_WITH_RNNOISE)
