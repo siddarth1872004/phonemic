@@ -99,8 +99,8 @@ with each release. Put `phonemic.sys`, `.inf`, `.cat`, the two scripts and
 
 ## Signing for everyone
 
-Test mode is the price of an unsigned driver. Removing it needs Microsoft
-**attestation signing**: an EV code-signing certificate and a Windows Hardware
-Dev Center (Partner Center) account, then submitting the package (CAB) for
-signing. Once signed, `install-driver.ps1` can skip the test-mode and local
-certificate steps.
+Test mode is the price of an unsigned driver. With Microsoft attestation
+signing the driver installs normally, with no test mode. CI already builds the
+submission package (`PhoneMic-driver-submission`, checked with InfVerif) and
+ships Microsoft-signed files from `signed/` when they match the source. The
+steps only the project owner can do are in [docs/SIGNING.md](../../docs/SIGNING.md).
