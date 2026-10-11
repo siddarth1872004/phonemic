@@ -118,9 +118,11 @@ if(PHONEMIC_BUILD_GUI)
   set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
-  # X11 only: runs everywhere (XWayland on Wayland desktops) and avoids the
-  # wayland-scanner / xkbcommon build dependencies.
-  set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE)
+  # X11 always (also runs on Wayland desktops through XWayland). Native Wayland
+  # is opt-in (PHONEMIC_WAYLAND, on for release builds) because it needs
+  # wayland-scanner and the wayland/xkbcommon headers; GLFW loads those
+  # libraries at run time, so the binary still starts without them.
+  set(GLFW_BUILD_WAYLAND ${PHONEMIC_WAYLAND} CACHE BOOL "" FORCE)
   FetchContent_Declare(glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4

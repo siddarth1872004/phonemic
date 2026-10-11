@@ -38,16 +38,117 @@ jobs:
           pulseaudio -D --exit-idle-time=-1
           sleep 1
           build/bin/phonemic-vmic-check --setup
-      - name: Package
+
+  # One build for every glibc distro: built on glibc 2.28 (AlmaLinux 8), with
+  # libstdc++ linked in, X11 + native Wayland, and the sound server, Wayland and
+  # GL loaded from the system at run time.
+  linux-portable:
+    name: Linux packages (AppImage, .deb, .rpm, .tar.gz)
+    runs-on: ubuntu-24.04
+    container: quay.io/pypa/manylinux_2_28_x86_64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
         run: |
+          dnf install -y libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel \
+            mesa-libGL-devel wayland-devel libxkbcommon-devel rpm-build desktop-file-utils file
+          cmake --version
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DPHONEMIC_PORTABLE=ON -DPHONEMIC_WAYLAND=ON
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Check the glibc baseline
+        run: |
+          for b in build/bin/PhoneMic build/bin/phonemic-receiver; do
+            v=$(objdump -T "$b" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)
+            echo "$b needs $v"
+            case "$v" in GLIBC_2.[0-9]|GLIBC_2.1[0-9]|GLIBC_2.2[0-8]) ;; *) echo "too new"; exit 1 ;; esac
+            if ldd "$b" | grep -q libstdc++; then echo "libstdc++ must be linked statically"; exit 1; fi
+          done
+      - name: Packages
+        run: |
+          cd build && cpack -G "DEB;RPM" && cd ..
+          cmake --install build --prefix "$PWD/stage/phonemic" --component phonemic
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          sh packaging/linux/build-appimage.sh "$PWD/stage/phonemic" "$PWD/appimagetool" PhoneMic-x86_64.AppImage
           mkdir -p dist
-          cp build/bin/PhoneMic dist/PhoneMic-linux
-          cp build/bin/phonemic-receiver build/bin/phonemic-softphone dist/
-          tar -C dist -czf PhoneMic-linux-x64.tar.gz .
+          mv PhoneMic-x86_64.AppImage build/phonemic_*.deb build/phonemic-*.rpm dist/
+          tar -C stage -czf dist/PhoneMic-linux-x86_64.tar.gz phonemic
+          ls -la dist
       - uses: actions/upload-artifact@v4
         with:
           name: PhoneMic-linux
-          path: PhoneMic-linux-x64.tar.gz
+          path: dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tests
+          path: build/bin/phonemic-tests
+
+  # Install the packages on real distros and prove the virtual mic works there.
+  linux-distros:
+    name: Linux on ${{ matrix.distro }}
+    needs: linux-portable
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { distro: Debian 11, image: "debian:11", server: pulseaudio }
+          - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pulseaudio }
+          - { distro: Fedora 41, image: "fedora:41", server: pipewire }
+          - { distro: Arch Linux, image: "archlinux:latest", server: pulseaudio }
+          - { distro: openSUSE Tumbleweed, image: "opensuse/tumbleweed", server: pulseaudio }
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhoneMic-linux
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-tests
+          path: tests
+      - name: Install PhoneMic and a sound server
+        shell: sh
+        run: |
+          set -eux
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/phonemic_*.deb pulseaudio
+          elif command -v dnf >/dev/null; then
+            dnf install -y ./dist/phonemic-*.rpm pipewire pipewire-pulseaudio wireplumber dbus-daemon
+          elif command -v zypper >/dev/null; then
+            zypper --non-interactive install --allow-unsigned-rpm ./dist/phonemic-*.rpm pulseaudio
+          elif command -v pacman >/dev/null; then
+            pacman -Syu --noconfirm libglvnd libx11 pulseaudio
+            tar -xzf dist/PhoneMic-linux-x86_64.tar.gz -C /opt
+            ln -s /opt/phonemic/bin/* /usr/local/bin/
+          fi
+          phonemic-receiver --version
+      - name: Test suite
+        shell: sh
+        run: chmod +x tests/phonemic-tests && tests/phonemic-tests
+      - name: Virtual microphone works (${{ matrix.server }})
+        shell: sh
+        run: |
+          set -eux
+          if [ "${{ matrix.server }}" = pipewire ]; then
+            cat > /tmp/run.sh <<'SH'
+          export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
+          pipewire & sleep 1; wireplumber & pipewire-pulse & sleep 3
+          phonemic-vmic-check --setup
+          SH
+            dbus-run-session -- sh /tmp/run.sh
+          else
+            pulseaudio -D --exit-idle-time=-1 --system=false || pulseaudio -D --exit-idle-time=-1
+            sleep 2
+            phonemic-vmic-check --setup
+          fi
 
   sanitizers:
     name: Linux (ASan + UBSan tests)
@@ -205,7 +306,7 @@ jobs:
   release:
     name: Attach binaries to the GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, sanitizers, windows-package, macos, android]
+    needs: [linux, sanitizers, linux-distros, windows-package, macos, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -221,5 +322,5 @@ jobs:
             artifacts/PhoneMic-windows/PhoneMic-windows-x64.zip
             artifacts/PhoneMic-windows/PhoneMic.exe
             artifacts/PhoneMic-macos/PhoneMic-macos.zip
-            artifacts/PhoneMic-linux/PhoneMic-linux-x64.tar.gz
+            artifacts/PhoneMic-linux/*
             artifacts/PhoneMic-android/PhoneMic.apk

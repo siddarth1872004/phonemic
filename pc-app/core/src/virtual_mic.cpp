@@ -11,6 +11,7 @@
 
 #include "phonemic/audio_out.hpp"
 #include "phonemic/process.hpp"
+#include "phonemic/pulse_ctl.hpp"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -32,93 +33,86 @@ namespace phonemic {
 #if defined(__linux__)
 
 namespace {
-std::vector<std::string> g_loaded_modules;
+std::vector<uint32_t> g_loaded_modules;
 std::mutex g_mu;
 
-// pactl with fixed arguments (no shell, nothing user-supplied); stdout+stderr.
-bool pactl(std::vector<std::string> args, std::string* out) {
-    args.insert(args.begin(), "pactl");
-    const ProcessResult r = run_process(args, 5000);
-    if (out) *out = r.output;
-    return r.started && r.exit_code == 0;
+bool file_contains(const char* path, const std::string& needle) {
+    FILE* f = std::fopen(path, "r");
+    if (!f) return false;
+    char buf[512];
+    bool found = false;
+    while (!found && std::fgets(buf, sizeof buf, f)) found = std::string(buf).find(needle) != std::string::npos;
+    std::fclose(f);
+    return found;
 }
 
-bool has_column(const std::string& listing, const std::string& name) {
-    std::istringstream in(listing);
-    std::string line;
-    while (std::getline(in, line)) {
-        // "index<TAB>name<TAB>..."
-        const auto t1 = line.find('\t');
-        if (t1 == std::string::npos) continue;
-        const auto t2 = line.find('\t', t1 + 1);
-        if (line.substr(t1 + 1, t2 - t1 - 1) == name) return true;
+// No sound server at all (plain ALSA): the kernel's loopback card, if loaded.
+// Audio played into its device 0 can be recorded from its device 1.
+VirtualMic alsa_loopback(const std::string& why, EventLog* log) {
+    VirtualMic vm;
+    if (file_contains("/proc/asound/cards", "Loopback")) {
+        vm.ready = true;
+        vm.via = "ALSA loopback";
+        vm.playback_match = "Loopback";
+        vm.mic_name = "Loopback (device 1)  [hw:Loopback,1]";
+        if (log) log->add("Virtual microphone ready: ALSA loopback (snd-aloop), " + why);
+        return vm;
     }
-    return false;
-}
-
-std::string trimmed(std::string s) {
-    while (!s.empty() && (s.back() == '\n' || s.back() == ' ')) s.pop_back();
-    return s;
+    vm.help = "No PulseAudio/PipeWire sound server found (" + why +
+              "). Install pipewire-pulse (or pulseaudio) for a \"PhoneMic Microphone\", or on plain ALSA "
+              "load the loopback card: sudo modprobe snd-aloop, then restart PhoneMic.";
+    return vm;
 }
 }  // namespace
 
 VirtualMic setup_virtual_mic(EventLog* log) {
+    std::string why;
+    auto pulse = PulseCtl::connect(&why);
+    if (!pulse) return alsa_loopback(why, log);
+
     VirtualMic vm;
+    vm.via = pulse->server_name().find("PipeWire") != std::string::npos ? "PipeWire" : "PulseAudio";
     vm.playback_match = "PhoneMic";
     vm.mic_name = "PhoneMic Microphone";
-    std::string sinks, sources;
-    if (!pactl({"list", "short", "sinks"}, &sinks)) {
-        vm.help =
-            "PulseAudio/PipeWire (pactl) was not found, so the virtual microphone couldn't be "
-            "created. Install pactl (package pulseaudio-utils or pipewire-pulse) and restart PhoneMic.";
-        return vm;
-    }
     std::lock_guard<std::mutex> lk(g_mu);
-    std::string idx;
-    if (!has_column(sinks, "PhoneMic")) {
-        if (!pactl({"load-module", "module-null-sink", "sink_name=PhoneMic",
-                    "sink_properties=device.description=PhoneMic"},
-                   &idx)) {
-            vm.help = "pactl could not create the PhoneMic sink (is the sound server running?).";
+    if (!pulse->has_sink("PhoneMic")) {
+        const uint32_t idx = pulse->load_module("module-null-sink",
+                                                "sink_name=PhoneMic sink_properties=device.description=PhoneMic");
+        if (idx == PulseCtl::kInvalid) {
+            vm.help = "The sound server refused to create the PhoneMic sink (module-null-sink).";
             return vm;
         }
-        g_loaded_modules.push_back(trimmed(idx));
+        g_loaded_modules.push_back(idx);
     }
-    pactl({"list", "short", "sources"}, &sources);
-    if (!has_column(sources, "PhoneMic_Mic")) {
+    if (!pulse->has_source("PhoneMic_Mic")) {
         // The whole property list is one quoted module argument, with the
         // description quoted again inside it so it keeps its space. (The 0.3
         // pre-release quoted only the description: PulseAudio rejected the
         // module, so the "PhoneMic Microphone" source never appeared.)
-        if (pactl({"load-module", "module-remap-source", "master=PhoneMic.monitor", "source_name=PhoneMic_Mic",
-                   "source_properties=\"device.description='PhoneMic Microphone' "
-                   "device.icon_name=audio-input-microphone\""},
-                  &idx)) {
-            g_loaded_modules.push_back(trimmed(idx));
-        } else if (pactl({"load-module", "module-remap-source", "master=PhoneMic.monitor",
-                          "source_name=PhoneMic_Mic"},
-                         &idx)) {
-            // Sound servers that reject the property list: same source, default name.
-            g_loaded_modules.push_back(trimmed(idx));
-            vm.mic_name = "Remapped Monitor of PhoneMic";
-        } else {
-            vm.mic_name = "Monitor of PhoneMic";  // apps can still record the sink's monitor
+        uint32_t idx = pulse->load_module(
+            "module-remap-source",
+            "master=PhoneMic.monitor source_name=PhoneMic_Mic "
+            "source_properties=\"device.description='PhoneMic Microphone' device.icon_name=audio-input-microphone\"");
+        if (idx == PulseCtl::kInvalid) {
+            // Servers that reject the property list: same source, default name.
+            idx = pulse->load_module("module-remap-source", "master=PhoneMic.monitor source_name=PhoneMic_Mic");
+            vm.mic_name = idx == PulseCtl::kInvalid ? "Monitor of PhoneMic" : "Remapped Monitor of PhoneMic";
         }
+        if (idx != PulseCtl::kInvalid) g_loaded_modules.push_back(idx);
     }
     // ALSA-backend fallback: the pulse ALSA plugin honours PULSE_SINK.
     ::setenv("PULSE_SINK", "PhoneMic", 1);
     vm.ready = true;
-    if (log) log->add("Virtual microphone ready: \"" + vm.mic_name + "\"");
+    if (log) log->add("Virtual microphone ready: \"" + vm.mic_name + "\" (" + vm.via + ")");
     return vm;
 }
 
 void teardown_virtual_mic() {
     std::lock_guard<std::mutex> lk(g_mu);
-    // Unload in reverse (the remapped source depends on the sink's monitor).
-    for (auto it = g_loaded_modules.rbegin(); it != g_loaded_modules.rend(); ++it) {
-        bool numeric = !it->empty();
-        for (char c : *it) numeric = numeric && c >= '0' && c <= '9';
-        if (numeric) pactl({"unload-module", *it}, nullptr);
+    if (g_loaded_modules.empty()) return;
+    if (auto pulse = PulseCtl::connect(nullptr)) {
+        // Reverse order: the remapped source depends on the sink's monitor.
+        for (auto it = g_loaded_modules.rbegin(); it != g_loaded_modules.rend(); ++it) pulse->unload_module(*it);
     }
     g_loaded_modules.clear();
 }

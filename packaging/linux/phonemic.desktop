@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PhoneMic
+GenericName=Phone Microphone
+Comment=Use your phone as a wireless microphone for your PC
+Exec=phonemic
+Icon=phonemic
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=microphone;mic;phone;android;voice;discord;zoom;obs;
+StartupWMClass=PhoneMic

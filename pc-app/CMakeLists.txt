@@ -18,6 +18,10 @@ add_library(phonemic_core STATIC
   core/src/websocket.cpp
   ipc/ring_feeder.cpp
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_sources(phonemic_core PRIVATE core/src/pulse_ctl.cpp)
+  target_link_libraries(phonemic_core PRIVATE ${CMAKE_DL_LIBS})
+endif()
 target_include_directories(phonemic_core PUBLIC core/include ipc)
 target_link_libraries(phonemic_core PUBLIC phonemic_shared opus PRIVATE miniaudio)
 target_compile_definitions(phonemic_core PUBLIC PHONEMIC_VERSION="${PROJECT_VERSION}")
