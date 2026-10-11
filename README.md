@@ -212,7 +212,7 @@ both by name and as the system default. See [docs/TESTING.md](docs/TESTING.md).
 
 - The Windows driver needs test mode until it is attestation-signed by
   Microsoft, which requires an EV code-signing certificate and a Partner Center
-  account.
+  account. Everything else is prepared; see [docs/SIGNING.md](docs/SIGNING.md).
 - The Windows driver is built and packaged in CI but has not yet been tested on
   a wide range of hardware. Reports are welcome.
 - Linux distributions without glibc, such as Alpine, need a source build.
@@ -232,6 +232,7 @@ both by name and as the system default. See [docs/TESTING.md](docs/TESTING.md).
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): design and components
 - [docs/PROTOCOL.md](docs/PROTOCOL.md): the wire protocol
 - [docs/TESTING.md](docs/TESTING.md): automated and manual testing
+- [docs/SIGNING.md](docs/SIGNING.md): getting the Windows driver signed by Microsoft
 - [docs/AUDIT.md](docs/AUDIT.md): problems found in 0.2 and how they were fixed
 - [pc-app/driver/README.md](pc-app/driver/README.md) and
   [pc-app/driver-macos/README.md](pc-app/driver-macos/README.md): the microphone drivers
