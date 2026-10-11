@@ -74,6 +74,11 @@ void App::tick() {
     }
     // Wi-Fi changes / VPNs come and go: keep the shown address current.
     if (now - last_addr_refresh_ > 5000) refresh_addresses();
+    // The user may change the default microphone in the system settings.
+    if (vmic.ready && now - last_default_check_ > 3000) {
+        default_mic = default_mic_state(vmic);
+        last_default_check_ = now;
+    }
 }
 
 void App::restart_receiver() {
@@ -276,6 +281,34 @@ bool App::setup_busy() const {
     return setup_->busy;
 }
 
+void App::make_default_mic() {
+    std::string err;
+    const bool ok = phonemic::make_default_mic(vmic, &err);
+    {
+        std::lock_guard<std::mutex> lk(setup_->mu);
+        setup_->msg = ok ? "PhoneMic is now the default microphone." : "Setup failed: couldn't make it the default (" + err + ").";
+    }
+    default_mic = default_mic_state(vmic);
+    last_default_check_ = mono_ms();
+    log.add(ok ? "PhoneMic Microphone set as the default microphone" : "Default microphone not changed: " + err);
+}
+
+#if defined(__linux__)
+void App::set_persistent_mic(bool on) {
+    std::string err;
+    const bool ok = phonemic::set_persistent_mic(on, vmic.via == "PipeWire", &err);
+    vmic.persistent = persistent_mic_installed();
+    {
+        std::lock_guard<std::mutex> lk(setup_->mu);
+        setup_->msg = !ok ? "Setup failed: " + err
+                      : on ? "PhoneMic Microphone stays available when PhoneMic is closed (from your next login on)."
+                           : "PhoneMic Microphone now goes away when PhoneMic closes.";
+    }
+    log.add(ok ? (on ? "Microphone kept registered when PhoneMic is closed" : "Microphone no longer kept registered")
+               : "Couldn't change: " + err);
+}
+#endif
+
 void App::install_driver() {
     {
         std::lock_guard<std::mutex> lk(setup_->mu);
@@ -291,20 +324,5 @@ void App::install_driver() {
     });
 }
 
-#ifdef _WIN32
-void App::install_vbcable() {
-    {
-        std::lock_guard<std::mutex> lk(setup_->mu);
-        if (setup_->busy) return;
-        setup_->busy = true;
-        setup_->msg = "Downloading VB-CABLE...";
-    }
-    install_vbcable_async([st = setup_](bool, std::string msg) {
-        std::lock_guard<std::mutex> lk(st->mu);
-        st->busy = false;
-        st->msg = std::move(msg);
-    });
-}
-#endif
 
 }  // namespace phonemic

@@ -45,6 +45,7 @@ struct Api {
     pa_operation* (*sink_by_name)(pa_context*, const char*, info_cb, void*);
     pa_operation* (*source_by_name)(pa_context*, const char*, info_cb, void*);
     pa_operation* (*server_info)(pa_context*, server_cb, void*);
+    pa_operation* (*set_default_source)(pa_context*, const char*, success_cb, void*);
     int (*operation_get_state)(const pa_operation*);
     void (*operation_unref)(pa_operation*);
 
@@ -70,6 +71,7 @@ struct Api {
         sym(sink_by_name, "pa_context_get_sink_info_by_name");
         sym(source_by_name, "pa_context_get_source_info_by_name");
         sym(server_info, "pa_context_get_server_info");
+        sym(set_default_source, "pa_context_set_default_source");
         sym(operation_get_state, "pa_operation_get_state");
         sym(operation_unref, "pa_operation_unref");
         if (!ok) {
@@ -181,20 +183,62 @@ bool PulseCtl::unload_module(uint32_t index) {
     return ok != 0;
 }
 
-std::string PulseCtl::server_name() {
-    // pa_server_info starts with: const char* user_name, host_name,
-    // server_version, server_name (stable since PulseAudio 0.9). PipeWire
-    // reports e.g. "PulseAudio (on PipeWire 1.0.5)".
-    std::string out;
+namespace {
+// The leading fields of pa_server_info (pulse/introspect.h), unchanged since
+// PulseAudio 0.9. Only these are read.
+struct ServerInfoHead {
+    const char* user_name;
+    const char* host_name;
+    const char* server_version;
+    const char* server_name;
+    struct {
+        int format;
+        uint32_t rate;
+        uint8_t channels;
+    } sample_spec;
+    const char* default_sink_name;
+    const char* default_source_name;
+};
+struct ServerStrings {
+    std::string name, default_source;
+};
+}  // namespace
+
+void PulseCtl::query_server(std::string* name, std::string* default_source) {
+    ServerStrings out;
     impl_->wait(impl_->api.server_info(
         impl_->ctx,
         [](pa_context*, const void* info, void* ud) {
             if (!info) return;
-            const char* const* f = static_cast<const char* const*>(info);
-            if (f[3]) *static_cast<std::string*>(ud) = f[3];
+            const auto* h = static_cast<const ServerInfoHead*>(info);
+            auto* o = static_cast<ServerStrings*>(ud);
+            if (h->server_name) o->name = h->server_name;
+            if (h->default_source_name) o->default_source = h->default_source_name;
         },
         &out));
-    return out;
+    if (name) *name = out.name;
+    if (default_source) *default_source = out.default_source;
+}
+
+// PipeWire reports e.g. "PulseAudio (on PipeWire 1.0.5)".
+std::string PulseCtl::server_name() {
+    std::string n;
+    query_server(&n, nullptr);
+    return n;
+}
+
+std::string PulseCtl::default_source() {
+    std::string d;
+    query_server(nullptr, &d);
+    return d;
+}
+
+bool PulseCtl::set_default_source(const std::string& name) {
+    int ok = 0;
+    impl_->wait(impl_->api.set_default_source(
+        impl_->ctx, name.c_str(), [](pa_context*, int success, void* ud) { *static_cast<int*>(ud) = success; },
+        &ok));
+    return ok != 0;
 }
 
 }  // namespace phonemic

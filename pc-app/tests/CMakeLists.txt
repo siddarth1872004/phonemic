@@ -9,6 +9,7 @@ add_executable(phonemic-tests
   test_denoise.cpp
   test_receiver.cpp
   test_ipc.cpp
+  test_persistent_mic.cpp
   test_websocket.cpp
   test_settings.cpp
   test_opus.cpp

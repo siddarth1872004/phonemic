@@ -20,11 +20,12 @@ You set this up **once**. After that: open PhoneMic on the PC, tap **Start** on 
 
 ### 2. Make it a real microphone
 PhoneMic brings its own microphone driver; nothing else to download.
-- **Windows 11:** in the PhoneMic window click **Install PhoneMic driver**. A window
-  explains each step and asks before turning on Windows *test mode* (needed until
-  the driver is signed by Microsoft; Secure Boot must be off). Restart when it says so.
-  - Windows 10, or you'd rather not use test mode: click **Use VB-CABLE instead**.
+- **Windows 11 (22H2 or newer):** in the PhoneMic window click **Install PhoneMic driver**.
+  A window explains each step and asks before turning on Windows *test mode* (needed
+  until the driver is signed by Microsoft; Secure Boot must be off). Restart when it
+  says so.
 - **Linux:** nothing to do; PhoneMic creates "PhoneMic Microphone" automatically.
+  Tick **Keep it when PhoneMic is closed** so apps you opened earlier see it too.
 - **Mac:** click **Install PhoneMic driver** and enter your password.
 
 ### 3. Put the app on your phone (or skip it)
@@ -41,7 +42,9 @@ PhoneMic brings its own microphone driver; nothing else to download.
 2. On the phone (same Wi-Fi), open **PhoneMic**, tap the **🔍 search icon** to find the
    PC (or type the address shown in the PC window), then tap **Start**.
 3. In **Discord / Zoom / OBS**, choose the microphone **PhoneMic Microphone**
-   (if you chose VB-CABLE on Windows: **CABLE Output (VB-Audio Virtual Cable)**).
+   (Windows lists it as *Microphone (PhoneMic Microphone)*).
+   Apps with no microphone setting use the computer's default: click
+   **Make it the default microphone** in the PhoneMic window once.
 
 The phone keeps streaming with the screen off. Stop it from the app or the notification.
 

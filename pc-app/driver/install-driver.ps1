@@ -54,7 +54,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 # --- Windows version ---------------------------------------------------------------------
 $build = [Environment]::OSVersion.Version.Build
 if ($build -lt 22621) {
-    Fail "The PhoneMic driver needs Windows 11 22H2 or newer (this PC runs build $build).`nUse VB-CABLE instead: the 'Use VB-CABLE instead' button in PhoneMic."
+    Fail "The PhoneMic driver needs Windows 11, version 22H2 or newer (this PC runs build $build). Update Windows, then run this again."
 }
 
 # --- package -------------------------------------------------------------------------------
@@ -72,8 +72,7 @@ if ($bcd -notmatch 'testsigning\s+Yes') {
     Write-Host '  - a "Test Mode" watermark shows on the desktop;'
     Write-Host '  - some games with anti-cheat refuse to start;'
     Write-Host '  - Secure Boot must be off (firmware settings).'
-    Write-Host 'uninstall-driver.ps1 turns it off again. VB-CABLE (button in PhoneMic) works'
-    Write-Host 'without test mode if you prefer.'
+    Write-Host 'uninstall-driver.ps1 turns it off again.'
     Write-Host ''
     if (-not $Yes) {
         $answer = Read-Host 'Turn on test mode now? [y/N]'
@@ -81,7 +80,7 @@ if ($bcd -notmatch 'testsigning\s+Yes') {
     }
     bcdedit /set testsigning on | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Fail "Windows refused to turn on test mode. Secure Boot is probably on: turn it off in your PC's firmware settings, or use VB-CABLE."
+        Fail "Windows refused to turn on test mode. Secure Boot is probably on: turn it off in your PC's firmware settings, then run this again."
     }
     Write-Host 'Test mode turned on (takes effect after a restart).'
     $restart = $true

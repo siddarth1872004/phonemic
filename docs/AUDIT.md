@@ -88,6 +88,15 @@ The driver now compiles and links in CI against the WDK 10.0.26100 headers (ACX 
 | 57 | Writing the ring as audio arrived would have under/overrun as the phone's and the driver's clocks drift. | The ring is fed at the driver's pace from the adaptive playout buffer. |
 | 58 | The INF needed stampinf placeholders filled and allowed Windows 11 21H2, which lacks KMDF 1.33. | Static `DriverVer`/KMDF version; targets 22H2+ (build 22621). |
 
+### 0.3.1: only PhoneMic's own microphone, visible everywhere
+
+| # | Problem | Fix |
+|---|---|---|
+| 59 | The Windows circuit never declared its KS categories and its microphone pin had no jack. Windows may then create no endpoint, or treat it as unplugged and hide it from apps. | Categories audio + capture + realtime assigned explicitly; an always-connected jack on the bridge pin. |
+| 60 | Apps without a microphone picker (and "Default" in those with one) record the system default, which was never PhoneMic. | **Make it the default microphone** on every OS (Windows: all three roles). CI records the default device to prove it. |
+| 61 | On Linux the microphone existed only while PhoneMic ran, so apps opened earlier (that don't rescan devices) never listed it. | Optional sound-server registration (PipeWire drop-in, or a `.nofail` block in `~/.config/pulse/default.pa`), removed exactly on undo. |
+| 62 | VB-CABLE and BlackHole were still offered as fallbacks. | Removed: PhoneMic uses only its own microphone. Windows below 11 22H2 is told plainly that it needs updating. |
+
 ## Build, CI and docs
 
 | # | Problem | Fix |

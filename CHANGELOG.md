@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.1 — 2026-10
+
+Full notes: [docs/releases/v0.3.1.md](docs/releases/v0.3.1.md).
+
+### Changed
+- PhoneMic uses only its own microphone, "PhoneMic Microphone". The VB-CABLE
+  installer and the VB-CABLE / BlackHole fallbacks are gone.
+
+### Added
+- **Make it the default microphone** (Windows, macOS, Linux), so apps without a
+  microphone picker use PhoneMic too; `phonemic-receiver --make-default`.
+- Linux: **Keep it when PhoneMic is closed** (PipeWire / PulseAudio
+  configuration), so apps opened earlier list it; `phonemic-receiver --keep-mic`.
+- `phonemic-vmic-check --default` and, on Windows, a check through the driver.
+- CI records the system default microphone on Linux (PulseAudio and PipeWire)
+  and macOS, and checks the Linux microphone survives a sound-server restart.
+
+### Fixed
+- Windows driver: explicit capture categories and an always-connected jack, so
+  Windows creates a visible endpoint instead of possibly none or an "unplugged" one.
+
 ## 0.3.0 — 2026-10
 
 Full notes: [docs/releases/v0.3.0.md](docs/releases/v0.3.0.md). Bug list with

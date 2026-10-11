@@ -59,6 +59,11 @@ void usage() {
 #ifdef _WIN32
         "  --driver            require the PhoneMic driver (default: use it if installed)\n"
 #endif
+        "  --make-default      make PhoneMic the system's default microphone and exit\n"
+#if defined(__linux__)
+        "  --keep-mic on|off   keep \"PhoneMic Microphone\" registered when PhoneMic is\n"
+        "                      closed (sound-server config), then exit\n"
+#endif
         "  --version");
 }
 
@@ -107,6 +112,31 @@ int main(int argc, char** argv) {
         else if (a == "--driver") driver = true;
         else if (a == "--usb") usb = true;
         else if (a == "--version") { std::puts("phonemic-receiver " PHONEMIC_VERSION); return 0; }
+        else if (a == "--make-default") {
+            EventLog l(20, true);
+            const VirtualMic vm = setup_virtual_mic(&l);
+            std::string err;
+            const bool ok = vm.ready && make_default_mic(vm, &err);
+            if (!ok) std::fprintf(stderr, "Not changed: %s\n", vm.ready ? err.c_str() : vm.help.c_str());
+            else std::printf("\"%s\" is now the default microphone.\n", vm.mic_name.c_str());
+            // Keep the device the default points at (Linux removes it on exit
+            // unless --keep-mic is on).
+            return ok ? 0 : 1;
+        }
+#if defined(__linux__)
+        else if (a == "--keep-mic") {
+            const std::string v = next();
+            if (v != "on" && v != "off") { usage(); return 2; }
+            const VirtualMic vm = setup_virtual_mic(nullptr);
+            std::string err;
+            const bool ok = vm.can_persist && set_persistent_mic(v == "on", vm.via == "PipeWire", &err);
+            if (!ok) std::fprintf(stderr, "Not changed: %s\n", vm.can_persist ? err.c_str() : vm.help.c_str());
+            else std::printf(v == "on" ? "PhoneMic Microphone stays registered when PhoneMic is closed.\n"
+                                       : "PhoneMic Microphone is removed when PhoneMic closes.\n");
+            teardown_virtual_mic();
+            return ok ? 0 : 1;
+        }
+#endif
         else { usage(); return a == "--help" || a == "-h" ? 0 : 2; }
     }
 

@@ -1,5 +1,5 @@
 /*
- * PhoneMic virtual audio device for macOS — replaces BlackHole.
+ * PhoneMic virtual audio device for macOS: PhoneMic's own microphone.
  *
  * A Core Audio AudioServerPlugIn (user space, loaded by coreaudiod; no kernel
  * extension) that publishes one loopback device, "PhoneMic Microphone":

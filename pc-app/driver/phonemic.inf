@@ -14,7 +14,7 @@ Class       = MEDIA
 ClassGuid   = {4d36e96c-e325-11ce-bfc1-08002be10318}
 Provider    = %ManufacturerName%
 CatalogFile = phonemic.cat
-DriverVer   = 10/11/2026,0.3.0.0
+DriverVer   = 10/11/2026,0.3.1.0
 PnpLockdown = 1
 
 [Manufacturer]
@@ -61,5 +61,5 @@ KmdfLibraryVersion = 1.33
 [Strings]
 ManufacturerName    = "PhoneMic Project"
 DiskName            = "PhoneMic Installation Disk"
-Phonemic.DeviceDesc = "PhoneMic Microphone (virtual)"
+Phonemic.DeviceDesc = "PhoneMic Microphone"
 Phonemic.SvcDesc    = "PhoneMic virtual microphone driver"

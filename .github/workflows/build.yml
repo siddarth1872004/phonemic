@@ -33,11 +33,19 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Virtual microphone works (PulseAudio)
         # The app's own setup creates "PhoneMic Microphone"; a tone played into
-        # it must come back out of it.
+        # it must come back out of it, also through the system *default*
+        # microphone (what apps without a mic picker record).
         run: |
           pulseaudio -D --exit-idle-time=-1
           sleep 1
           build/bin/phonemic-vmic-check --setup
+          build/bin/phonemic-vmic-check --setup --default
+      - name: Microphone kept registered when PhoneMic is closed
+        run: |
+          build/bin/phonemic-receiver --keep-mic on
+          pulseaudio -k; sleep 1; pulseaudio -D --exit-idle-time=-1; sleep 2
+          pactl list short sources | grep PhoneMic_Mic
+          build/bin/phonemic-receiver --keep-mic off
 
   # One build for every glibc distro: built on glibc 2.28 (AlmaLinux 8), with
   # libstdc++ linked in, X11 + native Wayland, and the sound server, Wayland and
@@ -149,6 +157,7 @@ jobs:
           export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
           pipewire & sleep 1; wireplumber & pipewire-pulse & sleep 3
           phonemic-vmic-check --setup
+          phonemic-vmic-check --setup --default
           SH
           if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
       - name: Virtual microphone works (PulseAudio)
@@ -164,6 +173,7 @@ jobs:
           pulseaudio --daemonize=no -n --exit-idle-time=-1 --load=module-native-protocol-unix &
           sleep 2
           phonemic-vmic-check --setup
+          phonemic-vmic-check --setup --default
 
   sanitizers:
     name: Linux (ASan + UBSan tests)
@@ -228,7 +238,9 @@ jobs:
           sudo sh build/bin/PhoneMic.app/Contents/Resources/install-driver.sh build/bin/PhoneMic.app/Contents/Resources/PhoneMic.driver
           sleep 5
       - name: Virtual microphone works (PhoneMic.driver)
-        run: build/bin/phonemic-vmic-check --setup
+        run: |
+          build/bin/phonemic-vmic-check --setup
+          build/bin/phonemic-vmic-check --setup --default
       - name: Package
         run: |
           mkdir -p dist
@@ -338,7 +350,6 @@ jobs:
           # failed unless someone had created it by hand first).
           files: |
             artifacts/PhoneMic-windows/PhoneMic-windows-x64.zip
-            artifacts/PhoneMic-windows/PhoneMic.exe
             artifacts/PhoneMic-macos/PhoneMic-macos.zip
             artifacts/PhoneMic-linux/*
             artifacts/PhoneMic-android/PhoneMic.apk

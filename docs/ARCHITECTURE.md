@@ -46,7 +46,7 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
                                  │  realtime miniaudio callback, or on Windows
                                  │  RingFeeder → shared ring → ACX driver
                      PhoneMic Microphone (own driver / PipeWire / PulseAudio)
-                     · VB-CABLE or BlackHole fallback · speakers
+                     · or a chosen speaker
 ```
 
 | Component | File |
@@ -76,7 +76,12 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
 | macOS | PhoneMic.driver loopback device; the app plays into its output side | PhoneMic Microphone |
 | Linux | PipeWire/PulseAudio null sink + remapped source, created through libpulse | PhoneMic Microphone |
 | Linux, ALSA only | the kernel's `snd-aloop` loopback card | Loopback device 1 |
-| Fallbacks | VB-CABLE (Windows 10 / no test mode), BlackHole (macOS) | their own names |
+
+No third-party virtual-cable driver is used or supported. `default_mic.cpp` makes
+PhoneMic the system default recording device (Windows: all three roles;
+macOS: default input; Linux: default source), for apps without a mic picker.
+On Linux the mic can stay registered when PhoneMic is closed (a pipewire-pulse
+drop-in, or a marked `.nofail` block in `~/.config/pulse/default.pa`).
 
 ### Why these buffers
 

@@ -37,8 +37,23 @@ Restart when it says so. Then pick **PhoneMic Microphone** in your apps.
 certificate, and offers to turn test mode off. `phonemic-driver.exe status`
 shows whether the device exists and the driver is running.
 
-On Windows 10, or without test mode, the app's **Use VB-CABLE instead** button
-sets up VB-CABLE as a fallback.
+PhoneMic doesn't use or support third-party virtual cables: this driver is the
+microphone on Windows. It needs Windows 11, version 22H2 or newer (ACX, KMDF 1.33).
+
+### Visible in every app
+
+Windows creates a capture endpoint, listed by every app (WASAPI, DirectSound,
+WinMM, UWP), when a filter carries the audio + capture (+ realtime) categories
+and has a microphone bridge pin. The circuit assigns those categories
+explicitly, and the bridge pin has a jack that is always plugged in (no presence
+detection), because Windows hides endpoints whose jack reads "unplugged". It
+shows as **Microphone (PhoneMic Microphone)**. **Make it the default
+microphone** in the app sets it as the default for all three roles (console,
+multimedia, communications), so apps without a picker use it too.
+
+To check the whole path on a PC: `phonemic-vmic-check --setup` (feeds the
+driver and records the endpoint), and `--setup --default` (records the system
+default microphone instead).
 
 ## Status
 

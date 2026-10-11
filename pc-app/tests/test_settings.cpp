@@ -26,7 +26,7 @@ TEST(settings_round_trip_and_bad_values_keep_defaults) {
     s.voice_focus = false;
     s.effect = 3;
     s.gain_db = 4.5f;
-    s.mic_device = "CABLE Input (VB-Audio Virtual Cable)";
+    s.mic_device = "Speakers (Realtek(R) Audio)";
     s.latency_ms = 80;
     s.web_enabled = true;
     s.web_token = "abc";

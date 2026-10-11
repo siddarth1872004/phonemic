@@ -2,6 +2,7 @@
 add_library(phonemic_core STATIC
   core/src/audio_out.cpp
   core/src/denoise.cpp
+  core/src/default_mic.cpp
   core/src/dsp.cpp
   core/src/jitter_buffer.cpp
   core/src/miniaudio_impl.c
@@ -50,12 +51,16 @@ if(PHONEMIC_WITH_WEB)
 endif()
 
 if(WIN32)
-  target_link_libraries(phonemic_core PUBLIC ws2_32 iphlpapi bcrypt winmm)
+  target_link_libraries(phonemic_core PUBLIC ws2_32 iphlpapi bcrypt winmm setupapi ole32)
   target_compile_definitions(phonemic_core PUBLIC _WIN32_WINNT=0x0A00 NOMINMAX WIN32_LEAN_AND_MEAN)
   target_sources(phonemic_core PRIVATE ipc/driver_feed_win.cpp)
 else()
   find_package(Threads REQUIRED)
   target_link_libraries(phonemic_core PUBLIC Threads::Threads)
+endif()
+
+if(APPLE)
+  target_link_libraries(phonemic_core PUBLIC "-framework CoreFoundation" "-framework CoreAudio")
 endif()
 
 if(MSVC)
