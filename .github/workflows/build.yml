@@ -89,9 +89,9 @@ jobs:
           name: linux-tests
           path: build/bin/phonemic-tests
 
-  # Install the packages on real distros and prove the virtual mic works there
-  # (PipeWire, the default on current desktops; real PulseAudio is covered by
-  # the "Linux (build + tests)" job). Rocky Linux 8 is the glibc 2.28 baseline.
+  # Install the packages on real distros and prove the virtual mic works there,
+  # on each distro's default sound server. Rocky Linux 8 is the glibc 2.28
+  # baseline (install + test suite).
   linux-distros:
     name: Linux on ${{ matrix.distro }}
     needs: linux-portable
@@ -102,7 +102,7 @@ jobs:
       matrix:
         include:
           - { distro: Debian 12, image: "debian:12", server: pipewire }
-          - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pipewire }
+          - { distro: Ubuntu 22.04, image: "ubuntu:22.04", server: pulseaudio }
           - { distro: Fedora 41, image: "fedora:41", server: pipewire }
           - { distro: Arch Linux, image: "archlinux:latest", server: pipewire }
           - { distro: openSUSE Tumbleweed, image: "opensuse/tumbleweed", server: pipewire }
@@ -118,14 +118,15 @@ jobs:
         with:
           name: linux-tests
           path: tests
-      - name: Install PhoneMic (and PipeWire)
+      - name: Install PhoneMic and the sound server
         shell: sh
         run: |
           set -eux
           pw() { [ "$SERVER" = pipewire ] && echo "$@" || true; }
+          pa() { [ "$SERVER" = pulseaudio ] && echo "$@" || true; }
           if command -v apt-get >/dev/null; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/phonemic_*.deb $(pw pipewire pipewire-pulse wireplumber dbus)
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/phonemic_*.deb $(pw pipewire pipewire-pulse wireplumber dbus) $(pa pulseaudio)
           elif command -v dnf >/dev/null; then
             dnf install -y ./dist/phonemic-*.rpm $(pw pipewire pipewire-pulseaudio wireplumber dbus-daemon)
           elif command -v zypper >/dev/null; then
@@ -150,6 +151,17 @@ jobs:
           phonemic-vmic-check --setup
           SH
           if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
+      - name: Virtual microphone works (PulseAudio)
+        if: matrix.server == 'pulseaudio'
+        shell: sh
+        run: |
+          set -eux
+          export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
+          # Foreground, client socket only: no sound card or D-Bus in a container
+          # (the daemonizing default setup refuses to start as root there).
+          pulseaudio --daemonize=no -n --exit-idle-time=-1 --load=module-native-protocol-unix &
+          sleep 2
+          phonemic-vmic-check --setup
 
   sanitizers:
     name: Linux (ASan + UBSan tests)
