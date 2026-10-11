@@ -9,8 +9,12 @@ See driver.h for STATUS (experimental: builds in CI, never loaded). Flow:
               microphone bridge pin, 48 kHz / mono / 16-bit format
                 └─ PhonemicEvtCircuitCreateStream (per client): RT stream
                      ├─ AllocateRtPackets: non-paged packet buffers
-                     ├─ Run: start the pump (maps the ring when the app runs)
+                     ├─ Run: start the pump
                      └─ PumpTimer: ring -> next packet, NotifyPacketComplete
+
+The shared ring (Global\PhonemicRing) is created by the device (DeviceAdd), not
+by the app: creating Global\ objects needs administrator rights, opening one
+the DACL allows does not. So the desktop app runs unelevated.
 
 Fixes relative to the first draft (which also used non-existent ACX calls):
  - the ring was mapped READ-ONLY and then written (read_index): bugcheck;
@@ -20,8 +24,8 @@ Fixes relative to the first draft (which also used non-existent ACX calls):
  - the mapped view's size was never checked against sizeof(PHONEMIC_RING);
  - a one-shot timer re-armed with a relative 10 ms drifted; the pump now
    follows an absolute schedule derived from the packet count;
- - Run failed outright if the desktop app wasn't running yet; it now plays
-   silence and keeps retrying the mapping from a PASSIVE work item.
+ - Run failed outright if the desktop app wasn't running yet; streams now play
+   silence until the app writes into the ring.
 --*/
 
 #include <initguid.h>
@@ -34,7 +38,9 @@ DECLARE_CONST_UNICODE_STRING(kCircuitName, L"PhoneMic Microphone");
 #pragma alloc_text(PAGE, PhonemicEvtDeviceAdd)
 #pragma alloc_text(PAGE, PhonemicCreateCaptureCircuit)
 #pragma alloc_text(PAGE, PhonemicEvtCircuitCreateStream)
-#pragma alloc_text(PAGE, PhonemicMapRing)
+#pragma alloc_text(PAGE, PhonemicCreateRing)
+#pragma alloc_text(PAGE, PhonemicDestroyRing)
+#pragma alloc_text(PAGE, PhonemicEvtDeviceCleanup)
 #endif
 
 // ---------------------------------------------------------------------------
@@ -79,10 +85,15 @@ PhonemicEvtDeviceAdd(_In_ WDFDRIVER Driver, _Inout_ PWDFDEVICE_INIT DeviceInit)
     }
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, PHONEMIC_DEVICE_CONTEXT);
+    attributes.EvtCleanupCallback = PhonemicEvtDeviceCleanup;
     status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
     if (!NT_SUCCESS(status)) {
         return status;
     }
+
+    // Without the ring the microphone still works, it just stays silent; the
+    // app reports "driver not running" because it can't open the ring.
+    (VOID)PhonemicCreateRing(PhonemicDeviceGetContext(device));
 
     ACX_DEVICE_CONFIG_INIT(&devCfg);
     status = AcxDeviceInitialize(device, &devCfg);
@@ -224,7 +235,6 @@ PhonemicEvtCircuitCreateStream(
     ACX_STREAM_CALLBACKS streamCallbacks;
     ACX_RT_STREAM_CALLBACKS rtCallbacks;
     WDF_TIMER_CONFIG timerCfg;
-    WDF_WORKITEM_CONFIG workCfg;
     PPHONEMIC_STREAM_CONTEXT ctx;
 
     UNREFERENCED_PARAMETER(Pin);
@@ -262,22 +272,14 @@ PhonemicEvtCircuitCreateStream(
     }
     ctx = PhonemicStreamGetContext(stream);
     RtlZeroMemory(ctx, sizeof(*ctx));
+    ctx->Ring = PhonemicDeviceGetContext(Device)->Ring;  // outlives the stream (child of the device)
 
     // High-resolution one-shot timer, re-armed on an absolute schedule.
     WDF_TIMER_CONFIG_INIT(&timerCfg, PhonemicEvtPumpTimer);
     timerCfg.UseHighResolutionTimer = WdfTrue;
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     attributes.ParentObject = stream;
-    status = WdfTimerCreate(&timerCfg, &attributes, &ctx->PumpTimer);
-    if (!NT_SUCCESS(status)) {
-        return status;
-    }
-
-    // Mapping the section must happen at PASSIVE_LEVEL: done by a work item.
-    WDF_WORKITEM_CONFIG_INIT(&workCfg, PhonemicEvtMapWorkItem);
-    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-    attributes.ParentObject = stream;
-    return WdfWorkItemCreate(&workCfg, &attributes, &ctx->MapWorkItem);
+    return WdfTimerCreate(&timerCfg, &attributes, &ctx->PumpTimer);
 }
 
 VOID
@@ -287,10 +289,6 @@ PhonemicEvtStreamCleanup(_In_ WDFOBJECT Object)
     if (ctx->PumpTimer) {
         WdfTimerStop(ctx->PumpTimer, TRUE);
     }
-    if (ctx->MapWorkItem) {
-        WdfWorkItemFlush(ctx->MapWorkItem);
-    }
-    PhonemicUnmapRing(ctx);
 }
 
 NTSTATUS
@@ -304,9 +302,8 @@ NTSTATUS
 PhonemicEvtStreamRelease(_In_ ACXSTREAM Stream)
 {
     PPHONEMIC_STREAM_CONTEXT ctx = PhonemicStreamGetContext(Stream);
+    ctx->Running = FALSE;
     WdfTimerStop(ctx->PumpTimer, TRUE);
-    WdfWorkItemFlush(ctx->MapWorkItem);
-    PhonemicUnmapRing(ctx);
     return STATUS_SUCCESS;
 }
 
@@ -414,9 +411,11 @@ PhonemicEvtStreamRun(_In_ ACXSTREAM Stream)
     if (ctx->PacketCount == 0 || ctx->SamplesPerPacket == 0) {
         return STATUS_INVALID_DEVICE_STATE;
     }
-    // If the desktop app isn't running yet we still start: the stream plays
-    // silence and the pump keeps retrying the mapping.
-    (VOID)PhonemicMapRing(ctx);
+    // Start at the producer's current position (no stale audio). If the app
+    // isn't running, the ring is empty and the stream plays silence.
+    if (ctx->Ring != NULL) {
+        ctx->RingReadIndex = (ULONGLONG)ReadNoFence64((volatile LONG64*)&ctx->Ring->write_index);
+    }
 
     KeQuerySystemTimePrecise(&now);
     ctx->StartTime = (ULONGLONG)now.QuadPart;
@@ -479,12 +478,6 @@ PhonemicEvtPumpTimer(_In_ WDFTIMER Timer)
         WriteNoFence64((volatile LONG64*)&ctx->Ring->read_index, (LONG64)ctx->RingReadIndex);
     } else {
         RtlZeroMemory(dst, ctx->PacketSize);
-        // Retry the mapping about once a second (needs PASSIVE_LEVEL).
-        if ((ULONGLONG)KeQueryInterruptTime() - ctx->LastMapAttempt > 10000000ull &&
-            InterlockedCompareExchange(&ctx->MapPending, 1, 0) == 0) {
-            ctx->LastMapAttempt = (ULONGLONG)KeQueryInterruptTime();
-            WdfWorkItemEnqueue(ctx->MapWorkItem);
-        }
     }
 
     qpc = KeQueryPerformanceCounter(NULL);
@@ -495,17 +488,6 @@ PhonemicEvtPumpTimer(_In_ WDFTIMER Timer)
     if (ctx->Running) {
         WdfTimerStart(ctx->PumpTimer, PhonemicDueTime(ctx, packet + 2));
     }
-}
-
-VOID
-PhonemicEvtMapWorkItem(_In_ WDFWORKITEM WorkItem)
-{
-    ACXSTREAM stream = (ACXSTREAM)WdfWorkItemGetParentObject(WorkItem);
-    PPHONEMIC_STREAM_CONTEXT ctx = PhonemicStreamGetContext(stream);
-    if (ctx->Ring == NULL) {
-        (VOID)PhonemicMapRing(ctx);
-    }
-    InterlockedExchange(&ctx->MapPending, 0);
 }
 
 NTSTATUS
@@ -540,99 +522,147 @@ PhonemicEvtStreamGetPresentationPosition(
 }
 
 // ---------------------------------------------------------------------------
-// Shared ring mapping (PASSIVE_LEVEL)
+// Shared ring (PASSIVE_LEVEL)
 // ---------------------------------------------------------------------------
 
+// Creates \BaseNamedObjects\PhonemicRing (Win32: Global\PhonemicRing), maps it
+// into system space and locks it. Access: SYSTEM and Administrators full
+// control; signed-in users may map it read/write (the desktop app writes the
+// audio), but not change its permissions or delete it. Everything user mode can
+// write is treated as hostile by the pump: indices are clamped and every slot
+// is taken modulo the capacity.
 NTSTATUS
-PhonemicMapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Ctx)
+PhonemicCreateRing(_Inout_ PPHONEMIC_DEVICE_CONTEXT Dev)
 {
     NTSTATUS status;
     UNICODE_STRING name;
     OBJECT_ATTRIBUTES oa;
+    SECURITY_DESCRIPTOR sd;
+    PACL acl;
+    ULONG aclSize;
+    LARGE_INTEGER maxSize;
     SIZE_T viewSize = 0;
     PHONEMIC_RING* ring;
 
     PAGED_CODE();
-    if (Ctx->Ring != NULL) {
-        return STATUS_SUCCESS;
+
+    aclSize = (ULONG)sizeof(ACL) + 3 * (ULONG)FIELD_OFFSET(ACCESS_ALLOWED_ACE, SidStart) +
+              RtlLengthSid(SeExports->SeLocalSystemSid) + RtlLengthSid(SeExports->SeAliasAdminsSid) +
+              RtlLengthSid(SeExports->SeAuthenticatedUsersSid);
+    acl = (PACL)ExAllocatePool2(POOL_FLAG_PAGED, aclSize, PHONEMIC_POOL_TAG);
+    if (acl == NULL) {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    status = RtlCreateAcl(acl, aclSize, ACL_REVISION);
+    if (NT_SUCCESS(status)) {
+        status = RtlAddAccessAllowedAce(acl, ACL_REVISION, SECTION_ALL_ACCESS, SeExports->SeLocalSystemSid);
+    }
+    if (NT_SUCCESS(status)) {
+        status = RtlAddAccessAllowedAce(acl, ACL_REVISION, SECTION_ALL_ACCESS, SeExports->SeAliasAdminsSid);
+    }
+    if (NT_SUCCESS(status)) {
+        status = RtlAddAccessAllowedAce(acl, ACL_REVISION, SECTION_QUERY | SECTION_MAP_READ | SECTION_MAP_WRITE,
+                                        SeExports->SeAuthenticatedUsersSid);
+    }
+    if (NT_SUCCESS(status)) {
+        status = RtlCreateSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION);
+    }
+    if (NT_SUCCESS(status)) {
+        status = RtlSetDaclSecurityDescriptor(&sd, TRUE, acl, FALSE);
+    }
+    if (!NT_SUCCESS(status)) {
+        ExFreePoolWithTag(acl, PHONEMIC_POOL_TAG);
+        return status;
     }
 
     RtlInitUnicodeString(&name, PHONEMIC_RING_SECTION_NAME);
-    InitializeObjectAttributes(&oa, &name, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
-    // Read AND write: the consumer publishes read_index back to the producer.
-    status = ZwOpenSection(&Ctx->SectionHandle, SECTION_MAP_READ | SECTION_MAP_WRITE, &oa);
+    // OPENIF: if the device restarts while the app still holds the previous
+    // section open, the name still exists; reuse it rather than fail.
+    InitializeObjectAttributes(&oa, &name, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE | OBJ_OPENIF, NULL, &sd);
+    maxSize.QuadPart = sizeof(PHONEMIC_RING);
+    status = ZwCreateSection(&Dev->SectionHandle, SECTION_ALL_ACCESS, &oa, &maxSize, PAGE_READWRITE, SEC_COMMIT,
+                             NULL);
+    ExFreePoolWithTag(acl, PHONEMIC_POOL_TAG);  // the section keeps its own copy
     if (!NT_SUCCESS(status)) {
-        Ctx->SectionHandle = NULL;
-        return status;  // the desktop app isn't running (yet)
+        Dev->SectionHandle = NULL;
+        return status;
     }
-    status = ObReferenceObjectByHandle(Ctx->SectionHandle, SECTION_MAP_READ | SECTION_MAP_WRITE, NULL,
-                                       KernelMode, &Ctx->SectionObject, NULL);
+
+    status = ObReferenceObjectByHandle(Dev->SectionHandle, SECTION_MAP_READ | SECTION_MAP_WRITE, NULL, KernelMode,
+                                       &Dev->SectionObject, NULL);
     if (!NT_SUCCESS(status)) {
         goto fail;
     }
-    // System space: valid in every process context, unlike a view mapped into
-    // whichever process happened to be current.
-    status = MmMapViewInSystemSpace(Ctx->SectionObject, &Ctx->RingView, &viewSize);
+    // System space: valid in every process context.
+    status = MmMapViewInSystemSpace(Dev->SectionObject, &Dev->RingView, &viewSize);
     if (!NT_SUCCESS(status)) {
-        Ctx->RingView = NULL;
+        Dev->RingView = NULL;
         goto fail;
     }
     if (viewSize < sizeof(PHONEMIC_RING)) {
-        status = STATUS_INVALID_BUFFER_SIZE;  // someone else's section with our name
+        status = STATUS_INVALID_BUFFER_SIZE;  // a pre-existing section of another size
         goto fail;
     }
     // Lock the pages so the DISPATCH_LEVEL pump can never page-fault.
-    Ctx->RingMdl = IoAllocateMdl(Ctx->RingView, sizeof(PHONEMIC_RING), FALSE, FALSE, NULL);
-    if (Ctx->RingMdl == NULL) {
+    Dev->RingMdl = IoAllocateMdl(Dev->RingView, sizeof(PHONEMIC_RING), FALSE, FALSE, NULL);
+    if (Dev->RingMdl == NULL) {
         status = STATUS_INSUFFICIENT_RESOURCES;
         goto fail;
     }
     __try {
-        MmProbeAndLockPages(Ctx->RingMdl, KernelMode, IoModifyAccess);
+        MmProbeAndLockPages(Dev->RingMdl, KernelMode, IoModifyAccess);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        IoFreeMdl(Ctx->RingMdl);
-        Ctx->RingMdl = NULL;
+        IoFreeMdl(Dev->RingMdl);
+        Dev->RingMdl = NULL;
         status = STATUS_ACCESS_VIOLATION;
         goto fail;
     }
 
-    ring = (PHONEMIC_RING*)Ctx->RingView;
-    if (ring->abi_version != PHONEMIC_RING_ABI_VERSION || ring->capacity != PHONEMIC_RING_CAPACITY ||
-        ring->sample_rate != PHONEMIC_SAMPLE_RATE || ring->channels != PHONEMIC_CHANNELS) {
-        status = STATUS_REVISION_MISMATCH;
-        goto fail;
-    }
-    // Start at the producer's current position (no stale audio).
-    Ctx->RingReadIndex = (ULONGLONG)ReadNoFence64((volatile LONG64*)&ring->write_index);
+    // Publish the layout the app checks before writing. The indices are left
+    // alone: a reused section keeps the app's write position.
+    ring = (PHONEMIC_RING*)Dev->RingView;
+    ring->capacity = PHONEMIC_RING_CAPACITY;
+    ring->sample_rate = PHONEMIC_SAMPLE_RATE;
+    ring->channels = PHONEMIC_CHANNELS;
     KeMemoryBarrier();
-    Ctx->Ring = ring;  // publish last: the pump checks this
+    ring->abi_version = PHONEMIC_RING_ABI_VERSION;
+    Dev->Ring = ring;
     return STATUS_SUCCESS;
 
 fail:
-    PhonemicUnmapRing(Ctx);
+    PhonemicDestroyRing(Dev);
     return status;
 }
 
 VOID
-PhonemicUnmapRing(_Inout_ PPHONEMIC_STREAM_CONTEXT Ctx)
+PhonemicDestroyRing(_Inout_ PPHONEMIC_DEVICE_CONTEXT Dev)
 {
-    Ctx->Ring = NULL;
-    KeMemoryBarrier();
-    if (Ctx->RingMdl) {
-        MmUnlockPages(Ctx->RingMdl);
-        IoFreeMdl(Ctx->RingMdl);
-        Ctx->RingMdl = NULL;
+    PAGED_CODE();
+    Dev->Ring = NULL;
+    if (Dev->RingMdl) {
+        MmUnlockPages(Dev->RingMdl);
+        IoFreeMdl(Dev->RingMdl);
+        Dev->RingMdl = NULL;
     }
-    if (Ctx->RingView) {
-        MmUnmapViewInSystemSpace(Ctx->RingView);
-        Ctx->RingView = NULL;
+    if (Dev->RingView) {
+        MmUnmapViewInSystemSpace(Dev->RingView);
+        Dev->RingView = NULL;
     }
-    if (Ctx->SectionObject) {
-        ObDereferenceObject(Ctx->SectionObject);
-        Ctx->SectionObject = NULL;
+    if (Dev->SectionObject) {
+        ObDereferenceObject(Dev->SectionObject);
+        Dev->SectionObject = NULL;
     }
-    if (Ctx->SectionHandle) {
-        ZwClose(Ctx->SectionHandle);
-        Ctx->SectionHandle = NULL;
+    if (Dev->SectionHandle) {
+        ZwClose(Dev->SectionHandle);
+        Dev->SectionHandle = NULL;
     }
+}
+
+// Streams are children of the device, so they are gone (pumps stopped) before
+// this runs.
+VOID
+PhonemicEvtDeviceCleanup(_In_ WDFOBJECT Object)
+{
+    PAGED_CODE();
+    PhonemicDestroyRing(PhonemicDeviceGetContext((WDFDEVICE)Object));
 }

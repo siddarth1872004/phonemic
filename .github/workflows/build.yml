@@ -24,13 +24,20 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev
+          sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev pulseaudio pulseaudio-utils
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Virtual microphone works (PulseAudio)
+        # The app's own setup creates "PhoneMic Microphone"; a tone played into
+        # it must come back out of it.
+        run: |
+          pulseaudio -D --exit-idle-time=-1
+          sleep 1
+          build/bin/phonemic-vmic-check --setup
       - name: Package
         run: |
           mkdir -p dist
@@ -71,36 +78,55 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Package
+      - name: Check the driver scripts parse
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build/bin/Release/PhoneMic.exe, build/bin/Release/phonemic-receiver.exe, build/bin/Release/phonemic-softphone.exe dist/
-          Compress-Archive -Path dist/* -DestinationPath PhoneMic-windows-x64.zip
+          foreach ($f in 'pc-app/driver/install-driver.ps1', 'pc-app/driver/uninstall-driver.ps1') {
+            $t = $null; $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$t, [ref]$e)
+            if ($e.Count) { $e | ForEach-Object { Write-Error "$f $_" }; exit 1 }
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: PhoneMic-windows
+          name: PhoneMic-windows-bin
           path: |
-            PhoneMic-windows-x64.zip
             build/bin/Release/PhoneMic.exe
+            build/bin/Release/phonemic-receiver.exe
+            build/bin/Release/phonemic-softphone.exe
+            build/bin/Release/phonemic-vmic-check.exe
+            build/bin/Release/phonemic-driver.exe
 
   macos:
-    name: macOS (experimental)
+    name: macOS (build + tests + virtual mic)
     runs-on: macos-14
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
       - name: Build
         run: cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
+      - name: Install PhoneMic.driver
+        run: |
+          sudo sh build/bin/PhoneMic.app/Contents/Resources/install-driver.sh build/bin/PhoneMic.app/Contents/Resources/PhoneMic.driver
+          sleep 5
+      - name: Virtual microphone works (PhoneMic.driver)
+        run: build/bin/phonemic-vmic-check --setup
+      - name: Package
+        run: |
+          mkdir -p dist
+          ditto build/bin/PhoneMic.app dist/PhoneMic.app
+          cp build/bin/phonemic-receiver build/bin/phonemic-softphone build/bin/phonemic-vmic-check dist/
+          ditto -c -k --keepParent dist PhoneMic-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-macos
+          path: PhoneMic-macos.zip
 
   driver:
-    name: Windows driver (WDK, experimental)
+    name: Windows driver (WDK)
     runs-on: windows-2022
-    # Compile + link check only (unsigned, never loaded). Releases don't wait on it.
     steps:
       - uses: actions/checkout@v4
       - uses: microsoft/setup-msbuild@v2
@@ -113,11 +139,48 @@ jobs:
           msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
           /p:PhonemicSkipInf=true /m /v:minimal
           "/p:PhonemicAcxRoot=$env:RUNNER_TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
+      - name: Package (INF + catalog; signed on the user's PC by install-driver.ps1)
+        shell: pwsh
+        run: |
+          $pkg = 'driver-package'
+          New-Item -ItemType Directory -Force $pkg | Out-Null
+          Copy-Item pc-app/driver/x64/Release/phonemic.sys, pc-app/driver/phonemic.inf, pc-app/driver/install-driver.ps1, pc-app/driver/uninstall-driver.ps1 $pkg
+          $inf2cat = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x86\Inf2Cat.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $inf2cat) { Write-Error 'Inf2Cat not found'; exit 1 }
+          & $inf2cat.FullName "/driver:$((Resolve-Path $pkg).Path)" /os:10_NI_X64 /uselocaltime
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$pkg/phonemic.cat")) { Write-Error 'Inf2Cat failed'; exit 1 }
+          Get-ChildItem $pkg
       - uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: PhoneMic-driver-unsigned
-          path: pc-app/driver/x64/Release/
+          name: PhoneMic-driver-package
+          path: driver-package/
+
+  windows-package:
+    name: Windows package (app + PhoneMic driver)
+    needs: [windows, driver]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhoneMic-windows-bin
+          path: bin
+      - uses: actions/download-artifact@v4
+        with:
+          name: PhoneMic-driver-package
+          path: dist/driver
+      - name: Assemble PhoneMic-windows-x64.zip
+        run: |
+          cp bin/PhoneMic.exe bin/phonemic-receiver.exe bin/phonemic-softphone.exe bin/phonemic-vmic-check.exe dist/
+          cp bin/phonemic-driver.exe dist/driver/
+          (cd dist && zip -r ../PhoneMic-windows-x64.zip .)
+          cp bin/PhoneMic.exe PhoneMic.exe
+          unzip -l PhoneMic-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-windows
+          path: |
+            PhoneMic-windows-x64.zip
+            PhoneMic.exe
 
   android:
     name: Android app
@@ -142,7 +205,7 @@ jobs:
   release:
     name: Attach binaries to the GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, sanitizers, windows, android]
+    needs: [linux, sanitizers, windows-package, macos, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -156,6 +219,7 @@ jobs:
           # failed unless someone had created it by hand first).
           files: |
             artifacts/PhoneMic-windows/PhoneMic-windows-x64.zip
-            artifacts/PhoneMic-windows/build/bin/Release/PhoneMic.exe
+            artifacts/PhoneMic-windows/PhoneMic.exe
+            artifacts/PhoneMic-macos/PhoneMic-macos.zip
             artifacts/PhoneMic-linux/PhoneMic-linux-x64.tar.gz
             artifacts/PhoneMic-android/PhoneMic.apk

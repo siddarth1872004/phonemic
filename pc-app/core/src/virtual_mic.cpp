@@ -1,19 +1,30 @@
 #include "phonemic/virtual_mic.hpp"
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <mutex>
 #include <sstream>
 #include <thread>
 #include <vector>
 
 #include "phonemic/audio_out.hpp"
+#include "phonemic/process.hpp"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <shellapi.h>
+
+#include "driver_feed.hpp"
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace phonemic {
@@ -24,16 +35,12 @@ namespace {
 std::vector<std::string> g_loaded_modules;
 std::mutex g_mu;
 
-// Run a fixed command line (no user input is ever interpolated) and capture stdout.
-bool run(const std::string& cmd, std::string* out) {
-    FILE* p = ::popen((cmd + " 2>/dev/null").c_str(), "r");
-    if (!p) return false;
-    char buf[512];
-    std::string s;
-    while (std::fgets(buf, sizeof buf, p)) s += buf;
-    const int rc = ::pclose(p);
-    if (out) *out = s;
-    return rc == 0;
+// pactl with fixed arguments (no shell, nothing user-supplied); stdout+stderr.
+bool pactl(std::vector<std::string> args, std::string* out) {
+    args.insert(args.begin(), "pactl");
+    const ProcessResult r = run_process(args, 5000);
+    if (out) *out = r.output;
+    return r.started && r.exit_code == 0;
 }
 
 bool has_column(const std::string& listing, const std::string& name) {
@@ -60,7 +67,7 @@ VirtualMic setup_virtual_mic(EventLog* log) {
     vm.playback_match = "PhoneMic";
     vm.mic_name = "PhoneMic Microphone";
     std::string sinks, sources;
-    if (!run("pactl list short sinks", &sinks)) {
+    if (!pactl({"list", "short", "sinks"}, &sinks)) {
         vm.help =
             "PulseAudio/PipeWire (pactl) was not found, so the virtual microphone couldn't be "
             "created. Install pactl (package pulseaudio-utils or pipewire-pulse) and restart PhoneMic.";
@@ -69,30 +76,39 @@ VirtualMic setup_virtual_mic(EventLog* log) {
     std::lock_guard<std::mutex> lk(g_mu);
     std::string idx;
     if (!has_column(sinks, "PhoneMic")) {
-        if (!run("pactl load-module module-null-sink sink_name=PhoneMic "
-                 "sink_properties=device.description=PhoneMic",
-                 &idx)) {
+        if (!pactl({"load-module", "module-null-sink", "sink_name=PhoneMic",
+                    "sink_properties=device.description=PhoneMic"},
+                   &idx)) {
             vm.help = "pactl could not create the PhoneMic sink (is the sound server running?).";
             return vm;
         }
         g_loaded_modules.push_back(trimmed(idx));
     }
-    run("pactl list short sources", &sources);
+    pactl({"list", "short", "sources"}, &sources);
     if (!has_column(sources, "PhoneMic_Mic")) {
-        // The description is quoted for the proplist parser so it keeps its space
-        // (the old build registered "PhoneMicMicrophone" but told users to pick
-        // "PhoneMic Microphone").
-        if (run("pactl load-module module-remap-source master=PhoneMic.monitor "
-                "source_name=PhoneMic_Mic "
-                "'source_properties=device.description=\"PhoneMic Microphone\" "
-                "device.icon_name=audio-input-microphone'",
-                &idx))
+        // The whole property list is one quoted module argument, with the
+        // description quoted again inside it so it keeps its space. (The 0.3
+        // pre-release quoted only the description: PulseAudio rejected the
+        // module, so the "PhoneMic Microphone" source never appeared.)
+        if (pactl({"load-module", "module-remap-source", "master=PhoneMic.monitor", "source_name=PhoneMic_Mic",
+                   "source_properties=\"device.description='PhoneMic Microphone' "
+                   "device.icon_name=audio-input-microphone\""},
+                  &idx)) {
             g_loaded_modules.push_back(trimmed(idx));
+        } else if (pactl({"load-module", "module-remap-source", "master=PhoneMic.monitor",
+                          "source_name=PhoneMic_Mic"},
+                         &idx)) {
+            // Sound servers that reject the property list: same source, default name.
+            g_loaded_modules.push_back(trimmed(idx));
+            vm.mic_name = "Remapped Monitor of PhoneMic";
+        } else {
+            vm.mic_name = "Monitor of PhoneMic";  // apps can still record the sink's monitor
+        }
     }
     // ALSA-backend fallback: the pulse ALSA plugin honours PULSE_SINK.
     ::setenv("PULSE_SINK", "PhoneMic", 1);
     vm.ready = true;
-    if (log) log->add("Virtual microphone ready: \"PhoneMic Microphone\"");
+    if (log) log->add("Virtual microphone ready: \"" + vm.mic_name + "\"");
     return vm;
 }
 
@@ -102,28 +118,71 @@ void teardown_virtual_mic() {
     for (auto it = g_loaded_modules.rbegin(); it != g_loaded_modules.rend(); ++it) {
         bool numeric = !it->empty();
         for (char c : *it) numeric = numeric && c >= '0' && c <= '9';
-        if (numeric) run("pactl unload-module " + *it, nullptr);
+        if (numeric) pactl({"unload-module", *it}, nullptr);
     }
     g_loaded_modules.clear();
 }
 
+void install_driver_async(const VirtualMic&, std::function<void(bool, std::string)> done) {
+    done(false, "Nothing to install on Linux: PulseAudio/PipeWire provide the virtual microphone.");
+}
+
 #elif defined(_WIN32)
+
+namespace {
+std::wstring exe_dir() {
+    wchar_t buf[MAX_PATH * 4];
+    const DWORD n = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
+    std::wstring p(buf, n);
+    const auto slash = p.find_last_of(L"\\/");
+    return slash == std::wstring::npos ? std::wstring() : p.substr(0, slash);
+}
+
+std::string narrow(const std::wstring& w) {
+    if (w.empty()) return {};
+    const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    std::string s(static_cast<size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), n, nullptr, nullptr);
+    if (!s.empty() && s.back() == '\0') s.pop_back();
+    return s;
+}
+
+// The release zip carries the driver in driver\ next to PhoneMic.exe.
+std::string find_driver_package() {
+    const std::wstring dir = exe_dir() + L"\\driver";
+    const DWORD a = GetFileAttributesW((dir + L"\\install-driver.ps1").c_str());
+    return (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) ? narrow(dir) : std::string();
+}
+}  // namespace
 
 VirtualMic setup_virtual_mic(EventLog* log) {
     VirtualMic vm;
-    vm.playback_match = "CABLE Input";
-    vm.mic_name = "CABLE Output (VB-Audio Virtual Cable)";
+    vm.driver_package = find_driver_package();
+    vm.mic_name = "PhoneMic Microphone";
+    if (DriverFeed::available()) {
+        vm.ready = true;
+        vm.direct_feed = true;
+        vm.via = "PhoneMic driver";
+        if (log) log->add("Virtual microphone ready: PhoneMic driver");
+        return vm;
+    }
+    // Fallback: a third-party virtual cable, if the user already has one.
     for (const auto& d : AudioSystem::get().playback_devices()) {
         if (icontains(d.name, "CABLE Input")) {
             vm.ready = true;
-            break;
+            vm.third_party = true;
+            vm.via = "VB-CABLE";
+            vm.playback_match = "CABLE Input";
+            vm.mic_name = "CABLE Output (VB-Audio Virtual Cable)";
+            if (log) log->add("Virtual microphone ready: VB-CABLE (fallback; the PhoneMic driver isn't installed)");
+            return vm;
         }
     }
-    if (!vm.ready)
-        vm.help = "Install the free VB-CABLE driver (button below, then reboot) so apps can use "
-                  "your phone as a microphone.";
-    else if (log)
-        log->add("Virtual microphone ready: VB-CABLE");
+    vm.help = vm.driver_package.empty()
+                  ? "This build doesn't include the PhoneMic driver. Use the PhoneMic release zip (it has a "
+                    "driver folder), or set up VB-CABLE below."
+                  : "Install the PhoneMic driver (button below) so apps can use your phone as a microphone. "
+                    "Needs Windows 11 22H2 or newer.";
     return vm;
 }
 
@@ -200,27 +259,137 @@ void install_vbcable_async(std::function<void(bool, std::string)> done) {
     }).detach();
 }
 
+// Runs driver\\install-driver.ps1 elevated in a visible console: it explains
+// and asks before changing anything (test-signing needs the user's consent).
+// Exit codes: 0 installed and running, 3010 installed but Windows must restart.
+void install_driver_async(const VirtualMic& vm, std::function<void(bool, std::string)> done) {
+    const std::wstring pkg = widen(vm.driver_package);
+    std::thread([pkg, done = std::move(done)] {
+        if (pkg.empty()) {
+            done(false, "Setup failed: this build has no driver folder next to PhoneMic.exe.");
+            return;
+        }
+        const std::wstring params =
+            L"-NoProfile -ExecutionPolicy Bypass -File \"" + pkg + L"\\install-driver.ps1\" -FromApp";
+        SHELLEXECUTEINFOW sei{};
+        sei.cbSize = sizeof sei;
+        sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+        sei.lpVerb = L"runas";
+        sei.lpFile = L"powershell.exe";
+        sei.lpParameters = params.c_str();
+        sei.lpDirectory = pkg.c_str();
+        sei.nShow = SW_SHOWNORMAL;
+        if (!ShellExecuteExW(&sei) || !sei.hProcess) {
+            done(false, GetLastError() == ERROR_CANCELLED ? "Setup failed: cancelled."
+                                                          : "Setup failed: couldn't start PowerShell.");
+            return;
+        }
+        WaitForSingleObject(sei.hProcess, INFINITE);
+        DWORD code = 1;
+        GetExitCodeProcess(sei.hProcess, &code);
+        CloseHandle(sei.hProcess);
+        if (code == 0)
+            done(true, "PhoneMic driver installed.");
+        else if (code == 3010)
+            done(true, "PhoneMic driver installed. Restart Windows to finish (test mode was just enabled).");
+        else
+            done(false, "Setup failed or was cancelled (see the PowerShell window). VB-CABLE works as a fallback.");
+    }).detach();
+}
+
 #elif defined(__APPLE__)
+
+namespace {
+std::string exe_dir() {
+    char buf[4096];
+    uint32_t size = sizeof buf;
+    if (_NSGetExecutablePath(buf, &size) != 0) return {};
+    std::string p(buf);
+    const auto slash = p.rfind('/');
+    return slash == std::string::npos ? std::string() : p.substr(0, slash);
+}
+
+bool is_dir(const std::string& p) {
+    struct stat st {};
+    return ::stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+// PhoneMic.app/Contents/Resources/PhoneMic.driver (the build copies it there),
+// or PhoneMic.driver next to a bare binary.
+std::string find_driver_package() {
+    const std::string dir = exe_dir();
+    for (const std::string& p : {dir + "/../Resources/PhoneMic.driver", dir + "/PhoneMic.driver"}) {
+        const auto slash = p.rfind('/');
+        if (is_dir(p) && ::access((p.substr(0, slash) + "/install-driver.sh").c_str(), R_OK) == 0) return p;
+    }
+    return {};
+}
+}  // namespace
 
 VirtualMic setup_virtual_mic(EventLog* log) {
     VirtualMic vm;
-    vm.playback_match = "BlackHole";
-    for (const auto& d : AudioSystem::get().playback_devices()) {
-        if (icontains(d.name, "BlackHole")) {
+    vm.driver_package = find_driver_package();
+    const auto devices = AudioSystem::get().playback_devices();
+    for (const auto& d : devices) {
+        if (icontains(d.name, "PhoneMic Microphone")) {
             vm.ready = true;
-            vm.mic_name = d.name;
-            break;
+            vm.via = "PhoneMic driver";
+            vm.playback_match = "PhoneMic Microphone";
+            vm.mic_name = "PhoneMic Microphone";
+            if (log) log->add("Virtual microphone ready: PhoneMic driver");
+            return vm;
         }
     }
-    if (!vm.ready)
-        vm.help = "Install the free BlackHole driver (brew install blackhole-2ch), then restart "
-                  "PhoneMic and pick \"BlackHole 2ch\" as the microphone in your apps.";
-    else if (log)
-        log->add("Virtual microphone ready: " + vm.mic_name);
+    // Fallback: BlackHole, if the user already has it.
+    for (const auto& d : devices) {
+        if (icontains(d.name, "BlackHole")) {
+            vm.ready = true;
+            vm.third_party = true;
+            vm.via = "BlackHole";
+            vm.playback_match = "BlackHole";
+            vm.mic_name = d.name;
+            if (log) log->add("Virtual microphone ready: " + vm.mic_name + " (fallback; the PhoneMic driver isn't installed)");
+            return vm;
+        }
+    }
+    vm.help = vm.driver_package.empty()
+                  ? "This build doesn't include PhoneMic.driver. Build it (cmake builds it on macOS) or use "
+                    "the release download."
+                  : "Install the PhoneMic driver (button below; asks for your password) so apps can use your "
+                    "phone as a microphone.";
     return vm;
 }
 
 void teardown_virtual_mic() {}
+
+void install_driver_async(const VirtualMic& vm, std::function<void(bool, std::string)> done) {
+    const std::string pkg = vm.driver_package;
+    std::thread([pkg, done = std::move(done)] {
+        if (pkg.empty()) {
+            done(false, "Setup failed: PhoneMic.driver isn't bundled with this build.");
+            return;
+        }
+        const std::string script = pkg.substr(0, pkg.rfind('/')) + "/install-driver.sh";
+        // macOS shows its own administrator prompt. Paths go in as arguments
+        // (quoted form), never spliced into the script text.
+        const ProcessResult r = run_process(
+            {"/usr/bin/osascript", "-e", "on run argv",
+             "-e",
+             "do shell script \"/bin/sh \" & quoted form of (item 1 of argv) & \" \" & "
+             "quoted form of (item 2 of argv) with administrator privileges",
+             "-e", "end run", script, pkg},
+            180000);
+        if (r.started && r.exit_code == 0) {
+            // coreaudiod restarts and loads the plug-in: give it a moment.
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            done(true, "PhoneMic driver installed.");
+        } else if (r.output.find("-128") != std::string::npos) {
+            done(false, "Setup failed: cancelled.");
+        } else {
+            done(false, "Setup failed: " + (r.output.empty() ? std::string("osascript did not run") : r.output));
+        }
+    }).detach();
+}
 
 #else
 
@@ -230,6 +399,9 @@ VirtualMic setup_virtual_mic(EventLog*) {
     return vm;
 }
 void teardown_virtual_mic() {}
+void install_driver_async(const VirtualMic&, std::function<void(bool, std::string)> done) {
+    done(false, "Not supported on this platform.");
+}
 
 #endif
 

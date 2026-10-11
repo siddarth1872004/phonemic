@@ -2,7 +2,10 @@
 ; phonemic.inf — PhoneMic virtual audio capture driver (ACX), EXPERIMENTAL.
 ;
 ; Installs a root-enumerated ACX audio device exposing one capture endpoint
-; ("PhoneMic Microphone"). Requires test-signing during development (README.md).
+; ("PhoneMic Microphone"). Windows 11 22H2 or newer (KMDF 1.33 + ACX). Until the
+; driver is attestation-signed it needs test-signing (install-driver.ps1).
+;
+; Ready to package as is (no stampinf step): bump DriverVer with each release.
 ;
 
 [Version]
@@ -11,13 +14,13 @@ Class       = MEDIA
 ClassGuid   = {4d36e96c-e325-11ce-bfc1-08002be10318}
 Provider    = %ManufacturerName%
 CatalogFile = phonemic.cat
-DriverVer   = ; set by stampinf during the build
+DriverVer   = 10/11/2026,0.3.0.0
 PnpLockdown = 1
 
 [Manufacturer]
-%ManufacturerName% = Standard,NTamd64.10.0...22000
+%ManufacturerName% = Standard,NTamd64.10.0...22621
 
-[Standard.NTamd64.10.0...22000]
+[Standard.NTamd64.10.0...22621]
 %Phonemic.DeviceDesc% = Phonemic_Install, Root\PhonemicCapture
 
 [SourceDisksNames]
@@ -53,7 +56,7 @@ ServiceBinary = %13%\phonemic.sys
 KmdfService = phonemic, Phonemic_wdfsect
 
 [Phonemic_wdfsect]
-KmdfLibraryVersion = $KMDFVERSION$
+KmdfLibraryVersion = 1.33
 
 [Strings]
 ManufacturerName    = "PhoneMic Project"
