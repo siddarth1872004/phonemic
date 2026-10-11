@@ -352,7 +352,7 @@ VirtualMic setup_virtual_mic(EventLog* log) {
     }
     if (driver_device_installed()) {
         vm.help = "The PhoneMic driver is installed but not running yet. Restart Windows. If it still doesn't "
-                  "start, test mode is off: click Install PhoneMic driver again.";
+                  "start, click Install PhoneMic driver again.";
         return vm;
     }
     vm.help = vm.driver_package.empty()
