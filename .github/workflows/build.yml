@@ -157,8 +157,10 @@ jobs:
         run: |
           set -eux
           export XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
-          # Foreground, client socket only: no sound card or D-Bus in a container
-          # (the daemonizing default setup refuses to start as root there).
+          # PulseAudio won't start if it can't use $HOME, and container jobs get a
+          # HOME owned by the runner's user; give it its own. Foreground, client
+          # socket only: there is no sound card or D-Bus in a container.
+          export HOME=/tmp/pahome; mkdir -p -m 700 $HOME
           pulseaudio --daemonize=no -n --exit-idle-time=-1 --load=module-native-protocol-unix &
           sleep 2
           phonemic-vmic-check --setup
