@@ -151,6 +151,53 @@ jobs:
           SH
           if command -v dbus-run-session >/dev/null; then dbus-run-session -- sh /tmp/run.sh; else sh /tmp/run.sh; fi
 
+  sanitizers:
+    name: Linux (ASan + UBSan tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPHONEMIC_BUILD_GUI=OFF
+          "-DCMAKE_C_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+          "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer"
+          "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    name: Windows (MSVC build + tests)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+      - name: Build
+        run: cmake --build build --config Release --parallel
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Check the driver scripts parse
+        shell: pwsh
+        run: |
+          foreach ($f in 'pc-app/driver/install-driver.ps1', 'pc-app/driver/uninstall-driver.ps1') {
+            $t = $null; $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$t, [ref]$e)
+            if ($e.Count) { $e | ForEach-Object { Write-Error "$f $_" }; exit 1 }
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneMic-windows-bin
+          path: |
+            build/bin/Release/PhoneMic.exe
+            build/bin/Release/phonemic-receiver.exe
+            build/bin/Release/phonemic-softphone.exe
+            build/bin/Release/phonemic-vmic-check.exe
+            build/bin/Release/phonemic-driver.exe
+
   macos:
     name: macOS (build + tests + virtual mic)
     runs-on: macos-14
