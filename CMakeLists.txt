@@ -15,7 +15,9 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
 project(PhoneMic VERSION 0.4.0 LANGUAGES C CXX)
 if(APPLE)
-  enable_language(OBJCXX)  # IOBluetooth (pc-app/core/src/bluetooth_mac.mm)
+  # OBJCXX for IOBluetooth (pc-app/core/src/bluetooth_mac.mm). OBJC too, or CMake
+  # compiles GLFW's .m files as Objective-C++, which rejects them.
+  enable_language(OBJC OBJCXX)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
