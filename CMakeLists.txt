@@ -76,7 +76,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
   set(CPACK_PACKAGE_NAME phonemic)
   set(CPACK_PACKAGE_VENDOR "PhoneMic")
-  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Use your phone as a Bluetooth microphone for your PC")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Use your phone as a microphone for your PC")
   set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/siddarth1872004/phonemic")
   set(CPACK_PACKAGE_CONTACT "PhoneMic <https://github.com/siddarth1872004/phonemic/issues>")
   set(CPACK_PACKAGING_INSTALL_PREFIX /usr)

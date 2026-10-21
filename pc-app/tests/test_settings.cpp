@@ -27,6 +27,8 @@ TEST(settings_round_trip_and_bad_values_keep_defaults) {
     s.mic_device = "Speakers (Realtek(R) Audio)";
     s.latency_ms = 80;
     s.monitor = true;
+    s.theme = 2;
+    s.accent = 3;
     CHECK(s.save(f));
     const auto l = Settings::load(f);
     CHECK(!l.voice_focus);
@@ -35,11 +37,14 @@ TEST(settings_round_trip_and_bad_values_keep_defaults) {
     CHECK(l.mic_device == s.mic_device);
     CHECK_EQ(l.latency_ms, 80);
     CHECK(l.monitor);
+    CHECK_EQ(l.theme, 2);
+    CHECK_EQ(l.accent, 3);
 
-    std::ofstream(f) << "effect=99999\nlatency_ms=abc\ngain_db=1e9\n";
+    std::ofstream(f) << "effect=99999\nlatency_ms=abc\ngain_db=1e9\ntheme=7\n";
     const auto d = Settings::load(f);
     CHECK_EQ(d.effect, 0);
     CHECK_EQ(d.latency_ms, 40);
+    CHECK_EQ(d.theme, 0);
     CHECK_NEAR(d.gain_db, 0.0, 1e-9);
     fs::remove_all(dir);
     CHECK(Settings::load(dir / "missing.ini").voice_focus);

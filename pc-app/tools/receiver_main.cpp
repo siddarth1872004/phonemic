@@ -1,7 +1,7 @@
 // phonemic-receiver — the PhoneMic receive pipeline without a window.
 //
-// Same engine as the desktop app (Bluetooth link, Voice Focus, voice changer,
-// virtual mic), for headless boxes and scripting.
+// Same engine as the desktop app (Bluetooth, Wi-Fi and USB links, Voice Focus,
+// voice changer, virtual mic), for headless boxes and scripting.
 #include <atomic>
 #include <cctype>
 #include <csignal>
@@ -15,12 +15,12 @@
 
 #include "phonemic/audio_out.hpp"
 #include "phonemic/bluetooth.hpp"
+#include "phonemic/net.hpp"
 #include "phonemic/receiver.hpp"
+#include "phonemic/usb.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
-#ifdef _WIN32
-#include "driver_feed.hpp"
-#endif
+#include "phonemic/wifi.hpp"
 
 using namespace phonemic;
 
@@ -35,6 +35,11 @@ struct NullSink : AudioSinkIface {
 void usage() {
     std::puts(
         "usage: phonemic-receiver [options]\n"
+        "  --port N            Wi-Fi UDP / USB TCP port (default 4010, or $PHONEMIC_PORT)\n"
+        "  --pin TEXT          Wi-Fi: accept only audio encrypted with this PIN\n"
+        "  --no-wifi           don't listen on the network\n"
+        "  --no-bluetooth      don't publish the Bluetooth service\n"
+        "  --usb               accept a phone on a USB cable (runs adb reverse)\n"
         "  --no-focus          disable Voice Focus noise removal\n"
         "  --effect NAME       normal|deep|chipmunk|robot|radio|echo\n"
         "  --gain DB           output gain in dB (-40..24, limiter prevents clipping)\n"
@@ -45,7 +50,9 @@ void usage() {
         "  --no-virtual-mic    don't create/use the virtual microphone\n"
         "  --null              discard audio (no sound device; for testing)\n"
 #ifdef _WIN32
-        "  --driver            require the PhoneMic driver (default: use it if installed)\n"
+        "  --rename-cable      name VB-CABLE's endpoints \"PhoneMic Microphone\" / \"PhoneMic\n"
+        "                      Feed\" (run as administrator), then exit\n"
+        "  --restore-cable     give VB-CABLE's endpoints their own names back, then exit\n"
 #endif
         "  --make-default      make PhoneMic the system's default microphone and exit\n"
 #if defined(__linux__)
@@ -67,8 +74,11 @@ Effect parse_effect(const std::string& s) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string device, monitor;
-    bool focus = true, list = false, use_vmic = true, null_out = false, driver = false;
+    uint16_t port = PM_DEFAULT_PORT;
+    if (const char* e = std::getenv("PHONEMIC_PORT")) port = static_cast<uint16_t>(std::atoi(e));
+    std::string pin, device, monitor;
+    bool focus = true, list = false, use_vmic = true, null_out = false;
+    bool wifi_on = true, bt_on = true, usb = false;
     int latency = 40;
     float gain = 0;
     Effect effect = Effect::None;
@@ -79,7 +89,12 @@ int main(int argc, char** argv) {
             if (i + 1 >= argc) { std::fprintf(stderr, "%s needs a value\n", a.c_str()); std::exit(2); }
             return argv[++i];
         };
-        if (a == "--no-focus") focus = false;
+        if (a == "--port") port = static_cast<uint16_t>(std::stoi(next()));
+        else if (a == "--pin") pin = next();
+        else if (a == "--no-wifi") wifi_on = false;
+        else if (a == "--no-bluetooth") bt_on = false;
+        else if (a == "--usb") usb = true;
+        else if (a == "--no-focus") focus = false;
         else if (a == "--effect") effect = parse_effect(next());
         else if (a == "--gain") gain = std::stof(next());
         else if (a == "--latency") latency = std::stoi(next());
@@ -88,7 +103,14 @@ int main(int argc, char** argv) {
         else if (a == "--list-devices") list = true;
         else if (a == "--no-virtual-mic") use_vmic = false;
         else if (a == "--null") null_out = true;
-        else if (a == "--driver") driver = true;
+#ifdef _WIN32
+        else if (a == "--rename-cable" || a == "--restore-cable") {
+            const int rc = rename_cable_now(a == "--rename-cable");
+            if (rc != 0) std::fprintf(stderr, rc == 3 ? "VB-CABLE isn't installed.\n"
+                                                      : "Windows refused (run this as administrator).\n");
+            return rc;
+        }
+#endif
         else if (a == "--version") { std::puts("phonemic-receiver " PHONEMIC_VERSION); return 0; }
         else if (a == "--make-default") {
             EventLog l(20, true);
@@ -136,25 +158,13 @@ int main(int argc, char** argv) {
     rx.set_voice_focus(focus);
     rx.set_effect(effect);
     rx.set_gain_db(gain);
+    rx.set_passphrase(pin);
 
     NullSink null_sink;
     AudioOutput out, mon;
-    std::unique_ptr<AudioSinkIface> driver_sink;
     std::string err;
     std::string out_name = "nothing (--null)";
-    if (driver || (device.empty() && !null_out && vmic.direct_feed)) {
-#ifdef _WIN32
-        auto f = DriverFeed::open(&err);
-        if (!f) { std::fprintf(stderr, "PhoneMic driver: %s\n", err.c_str()); return 1; }
-        f->set_latency_ms(static_cast<uint32_t>(latency));
-        driver_sink = std::move(f);
-        rx.set_mic_sink(driver_sink.get());
-        out_name = "PhoneMic driver (apps record \"PhoneMic Microphone\")";
-#else
-        std::fprintf(stderr, "--driver is Windows-only\n");
-        return 2;
-#endif
-    } else if (null_out) {
+    if (null_out) {
         rx.set_mic_sink(&null_sink);
     } else {
         const std::string want = !device.empty() ? device : (vmic.ready ? vmic.playback_match : "");
@@ -181,13 +191,29 @@ int main(int argc, char** argv) {
     }
 
     BluetoothServer bt(&rx, &log);
-    bt.start();
+    if (bt_on) bt.start();
+    WifiServer wifi(&rx, &log);
+    if (wifi_on && !wifi.start(port, &err)) {
+        std::fprintf(stderr, "Wi-Fi: %s\n(Is another PhoneMic already running? Try --port.)\n", err.c_str());
+        wifi_on = false;
+    }
+    UsbServer usb_in(&rx, &log);
+    AdbBridge adb(&log);
+    if (usb) {
+        if (!usb_in.start(port, &err)) std::fprintf(stderr, "USB: %s\n", err.c_str());
+        else adb.start(usb_in.port());
+    }
 
     std::printf("=====================================================\n");
     std::printf(" PhoneMic receiver %s — ready\n", PHONEMIC_VERSION);
     std::printf("=====================================================\n");
-    std::printf(" Pair the phone with this PC in Bluetooth settings, then\n");
-    std::printf(" pick this PC in the PhoneMic app and tap Start.\n");
+    if (bt_on) std::printf(" Bluetooth: pair the phone with this PC, pick it in the app\n");
+    if (wifi_on) {
+        std::printf(" Wi-Fi: same network, port %u%s", wifi.port(), pin.empty() ? "" : " (PIN required)");
+        for (const auto& a : net::local_addresses()) std::printf("  %s", a.ip.c_str());
+        std::printf("\n");
+    }
+    if (usb) std::printf(" USB: plug the phone in (USB debugging on), pick USB in the app\n");
     std::printf(" Audio -> %s\n", out_name.c_str());
     if (vmic.ready) std::printf(" In Discord/Zoom/OBS pick the microphone: \"%s\"\n", vmic.mic_name.c_str());
     else if (!vmic.help.empty()) std::printf(" Note: %s\n", vmic.help.c_str());
@@ -208,6 +234,9 @@ int main(int argc, char** argv) {
             }
         }
     }
+    adb.stop();
+    usb_in.stop();
+    wifi.stop();
     bt.stop();
     teardown_virtual_mic();
     return 0;

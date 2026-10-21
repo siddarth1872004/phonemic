@@ -4,23 +4,31 @@
 
 Full notes: [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md).
 
+### Added
+- Bluetooth: the phone streams to the paired PC over RFCOMM through the
+  operating system's own Bluetooth stack (BlueZ over D-Bus, Winsock AF_BTH),
+  alongside Wi-Fi and USB. The phone app picks the link.
+- Windows: VB-CABLE integration. It is installed from the app (downloaded from
+  vb-audio.com, Authenticode-checked), PhoneMic routes into it automatically,
+  its endpoints can be renamed "PhoneMic Microphone" / "PhoneMic Feed", and the
+  cable is kept from being the default speaker.
+- Themes (OLED black, Dark, Light) and five accent colours on both apps.
+- A new app icon: the Windows exe resource, the Linux desktop icon and an
+  Android adaptive icon with a monochrome layer.
+
 ### Changed
-- Bluetooth only: the phone streams to the paired PC over RFCOMM through the
-  operating system's own Bluetooth stack (BlueZ over D-Bus, Winsock AF_BTH).
-  No Bluetooth driver is installed. The audio still reaches apps
-  as "PhoneMic Microphone".
-- True-black (OLED) design on the phone and the PC, with a shared palette.
-- Android: framework widgets only (AndroidX and Material removed); the PC is
-  chosen from the phone's paired devices.
+- Windows 10 or 11, 64-bit; the Windows 11 22H2 minimum is gone.
+- Android: framework widgets only (AndroidX and Material removed).
 - Release builds drop unused code and symbols (`--gc-sections`, `-s`).
+- Child processes (adb) no longer inherit PhoneMic's sockets.
 
 ### Removed
+- PhoneMic's own Windows (ACX) microphone driver, its installer and the
+  test-signing steps; VB-CABLE replaces it.
 - macOS support: the macOS app, the `PhoneMic.driver` Core Audio plug-in and
   the macOS build. PhoneMic now runs on Windows and Linux.
-- Wi-Fi UDP streaming and LAN discovery, the browser microphone (HTTPS,
-  WebSocket, QR code), USB cable mode, PIN encryption (Bluetooth pairing and
-  link encryption replace it), `phonemic-softphone`, and the monocypher,
-  Mbed TLS and QR code dependencies.
+- The browser microphone (HTTPS, WebSocket, QR code), `phonemic-softphone`,
+  and the Mbed TLS and QR code dependencies.
 
 ## 0.3.1 — 2026-10
 

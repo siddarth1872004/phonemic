@@ -198,7 +198,7 @@ void BluetoothServer::accept(std::unique_ptr<ByteStream> s, const std::string& p
     if (stop_.load() || active_.load() >= kMaxConnections) return;  // `s` closes on return
     active_.fetch_add(1);
     SourceId src;
-    src.conn_id = next_id_.fetch_add(1);
+    src.conn_id = Receiver::new_conn_id();
     src.name = peer_name.empty() ? "Phone" : peer_name;
     if (log_) log_->add(src.name + " connected over Bluetooth");
     ByteStream* raw = s.get();

@@ -20,10 +20,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
-#include <setupapi.h>
 #include <shellapi.h>
-
-#include "driver_feed.hpp"
 #endif
 
 namespace phonemic {
@@ -260,104 +257,7 @@ void teardown_virtual_mic() {
     g_loaded_modules.clear();
 }
 
-void install_driver_async(const VirtualMic&, std::function<void(bool, std::string)> done) {
-    done(false, "Nothing to install on Linux: PulseAudio/PipeWire provide the virtual microphone.");
-}
-
 #elif defined(_WIN32)
-
-namespace {
-std::wstring exe_dir() {
-    wchar_t buf[MAX_PATH * 4];
-    const DWORD n = GetModuleFileNameW(nullptr, buf, static_cast<DWORD>(std::size(buf)));
-    std::wstring p(buf, n);
-    const auto slash = p.find_last_of(L"\\/");
-    return slash == std::wstring::npos ? std::wstring() : p.substr(0, slash);
-}
-
-std::string narrow(const std::wstring& w) {
-    if (w.empty()) return {};
-    const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    std::string s(static_cast<size_t>(n), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, s.data(), n, nullptr, nullptr);
-    if (!s.empty() && s.back() == '\0') s.pop_back();
-    return s;
-}
-
-// The release zip carries the driver in driver\ next to PhoneMic.exe.
-std::string find_driver_package() {
-    const std::wstring dir = exe_dir() + L"\\driver";
-    const DWORD a = GetFileAttributesW((dir + L"\\install-driver.ps1").c_str());
-    return (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY)) ? narrow(dir) : std::string();
-}
-}  // namespace
-
-namespace {
-// ACX + KMDF 1.33: Windows 11 22H2.
-constexpr DWORD kMinWindowsBuild = 22621;
-
-// Build number from the kernel (GetVersionEx lies to unmanifested apps).
-DWORD windows_build() {
-    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
-    OSVERSIONINFOW v{};
-    v.dwOSVersionInfoSize = sizeof v;
-    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
-        if (auto fn = reinterpret_cast<RtlGetVersionFn>(
-                reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion"))))
-            if (fn(&v) == 0) return v.dwBuildNumber;
-    return 0;
-}
-
-// Is the PhoneMic device (Root\PhonemicCapture) installed, running or not?
-bool driver_device_installed() {
-    HDEVINFO set = SetupDiGetClassDevsW(nullptr, nullptr, nullptr, DIGCF_ALLCLASSES);
-    if (set == INVALID_HANDLE_VALUE) return false;
-    bool found = false;
-    SP_DEVINFO_DATA d{};
-    d.cbSize = sizeof d;
-    for (DWORD i = 0; !found && SetupDiEnumDeviceInfo(set, i, &d); ++i) {
-        wchar_t ids[512] = {};
-        if (SetupDiGetDeviceRegistryPropertyW(set, &d, SPDRP_HARDWAREID, nullptr, reinterpret_cast<BYTE*>(ids),
-                                              sizeof ids - sizeof(wchar_t), nullptr))
-            for (const wchar_t* p = ids; *p && !found; p += wcslen(p) + 1)
-                found = _wcsicmp(p, L"Root\\PhonemicCapture") == 0;
-    }
-    SetupDiDestroyDeviceInfoList(set);
-    return found;
-}
-}  // namespace
-
-VirtualMic setup_virtual_mic(EventLog* log) {
-    VirtualMic vm;
-    vm.driver_package = find_driver_package();
-    vm.mic_name = "PhoneMic Microphone";
-    if (DriverFeed::available()) {
-        vm.ready = true;
-        vm.direct_feed = true;
-        vm.via = "PhoneMic driver";
-        if (log) log->add("Virtual microphone ready: PhoneMic driver");
-        return vm;
-    }
-    const DWORD build = windows_build();
-    if (build != 0 && build < kMinWindowsBuild) {
-        vm.driver_package.clear();  // nothing installable on this Windows
-        vm.help = "PhoneMic's microphone driver needs Windows 11, version 22H2 or newer (this PC runs build " +
-                  std::to_string(build) + "). Update Windows to use your phone as a microphone.";
-        return vm;
-    }
-    if (driver_device_installed()) {
-        vm.help = "The PhoneMic driver is installed but not running yet. Restart Windows. If it still doesn't "
-                  "start, click Install PhoneMic driver again.";
-        return vm;
-    }
-    vm.help = vm.driver_package.empty()
-                  ? "This copy of PhoneMic has no driver folder next to PhoneMic.exe. Download the release zip "
-                    "(PhoneMic-windows-x64.zip) and run PhoneMic from it."
-                  : "Install the PhoneMic driver (button below) so every app can use your phone as a microphone.";
-    return vm;
-}
-
-void teardown_virtual_mic() {}
 
 namespace {
 std::wstring widen(const std::string& s) {
@@ -370,41 +270,128 @@ std::wstring widen(const std::string& s) {
 }
 }  // namespace
 
-// Runs driver\\install-driver.ps1 elevated in a visible console: it explains
-// and asks before changing anything (test-signing needs the user's consent).
-// Exit codes: 0 installed and running, 3010 installed but Windows must restart.
-void install_driver_async(const VirtualMic& vm, std::function<void(bool, std::string)> done) {
-    const std::wstring pkg = widen(vm.driver_package);
-    std::thread([pkg, done = std::move(done)] {
-        if (pkg.empty()) {
-            done(false, "Setup failed: this build has no driver folder next to PhoneMic.exe.");
+VirtualMic setup_virtual_mic(EventLog* log) {
+    VirtualMic vm;
+    CableEndpoints cable;
+    if (!find_cable(&cable)) {
+        vm.can_install = true;
+        vm.mic_name = "CABLE Output (VB-Audio Virtual Cable)";
+        vm.help = "Windows needs a virtual audio cable for other apps to hear your phone. Install VB-CABLE "
+                  "(free, signed, from vb-audio.com) with the button below, then restart Windows.";
+        return vm;
+    }
+    vm.ready = true;
+    vm.via = "VB-CABLE";
+    // The adapter name stays in the friendly name when the endpoints are renamed.
+    vm.playback_match = "VB-Audio Virtual Cable";
+    vm.mic_name = cable.mic_name;
+    vm.can_rename = !cable.named_phonemic;
+    if (log) log->add("Virtual microphone ready: " + cable.mic_name);
+    if (cable.default_output) {
+        // Everything the PC plays would go into the mic, and you'd hear nothing.
+        std::string now;
+        if (fix_cable_default_output(&now)) {
+            if (log) log->add("VB-CABLE was the default speaker; switched it back to " + now);
+        } else if (log) {
+            log->add("VB-CABLE is the default speaker: pick your real speakers in Settings > Sound > Output");
+        }
+    }
+    return vm;
+}
+
+void teardown_virtual_mic() {}
+
+void install_vbcable_async(std::function<void(bool, std::string)> done) {
+    std::thread([done = std::move(done)] {
+        char tmp[MAX_PATH] = {0};
+        GetTempPathA(MAX_PATH, tmp);
+        const std::string result_file = std::string(tmp) + "phonemic_vbcable_result.txt";
+        DeleteFileA(result_file.c_str());
+        // Download, unpack, verify the Authenticode signature (must be valid and
+        // issued to VB-Audio / Vincent Burel), then launch the installer elevated
+        // and wait for it. The outcome is written to a file because the process
+        // has no console.
+        const std::string script =
+            "$ErrorActionPreference='Stop';"
+            "$r='" + result_file + "';"
+            "try{"
+            "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;"
+            "$d=Join-Path $env:TEMP 'phonemic_vbcable';"
+            "New-Item -ItemType Directory -Force $d|Out-Null;"
+            "$z=Join-Path $d 'vbcable.zip';$ok=$false;"
+            "foreach($p in 'VBCABLE_Driver_Pack45.zip','VBCABLE_Driver_Pack43.zip'){"
+            "try{Invoke-WebRequest -UseBasicParsing -Uri ('https://download.vb-audio.com/Download_CABLE/'+$p) -OutFile $z;$ok=$true;break}catch{}};"
+            "if(-not $ok){throw 'Download failed - check your internet connection'};"
+            "Expand-Archive -Path $z -DestinationPath $d -Force;"
+            "$exe=Join-Path $d $(if([Environment]::Is64BitOperatingSystem){'VBCABLE_Setup_x64.exe'}else{'VBCABLE_Setup.exe'});"
+            "$s=Get-AuthenticodeSignature $exe;"
+            "if($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'Burel|VB-Audio'){throw ('Installer signature check failed: '+$s.Status)};"
+            "Start-Process -FilePath $exe -Verb RunAs -Wait;"
+            "Set-Content -Path $r -Value 'OK'"
+            "}catch{Set-Content -Path $r -Value ('ERR '+$_.Exception.Message)}";
+        std::wstring cmd = L"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"" +
+                           widen(script) + L"\"";
+        STARTUPINFOW si{};
+        si.cb = sizeof si;
+        PROCESS_INFORMATION pi{};
+        if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si,
+                            &pi)) {
+            done(false, "Couldn't start PowerShell to run the installer.");
             return;
         }
-        const std::wstring params =
-            L"-NoProfile -ExecutionPolicy Bypass -File \"" + pkg + L"\\install-driver.ps1\" -FromApp";
+        WaitForSingleObject(pi.hProcess, 15 * 60 * 1000);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        std::string res;
+        if (FILE* f = std::fopen(result_file.c_str(), "rb")) {
+            char buf[1024] = {0};
+            const size_t n = std::fread(buf, 1, sizeof buf - 1, f);
+            std::fclose(f);
+            res.assign(buf, n);
+        }
+        // Set-Content writes UTF-16/ANSI depending on the PowerShell version.
+        std::string clean;
+        for (char c : res)
+            if (c >= 0x20 && c < 0x7F) clean.push_back(c);
+        if (clean.rfind("OK", 0) == 0)
+            done(true, "VB-CABLE installer finished. Restart Windows, then reopen PhoneMic.");
+        else if (clean.rfind("ERR", 0) == 0)
+            done(false, "Setup failed: " + clean.substr(4));
+        else
+            done(false, "Setup failed (no result). Install VB-CABLE manually from vb-audio.com/Cable.");
+    }).detach();
+}
+
+void rename_cable_async(bool to_phonemic, std::function<void(bool, std::string)> done) {
+    std::thread([to_phonemic, done = std::move(done)] {
+        wchar_t exe[MAX_PATH * 4];
+        const DWORD n = GetModuleFileNameW(nullptr, exe, static_cast<DWORD>(std::size(exe)));
+        if (n == 0 || n >= std::size(exe)) {
+            done(false, "Couldn't find PhoneMic.exe to run the rename.");
+            return;
+        }
         SHELLEXECUTEINFOW sei{};
         sei.cbSize = sizeof sei;
         sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-        sei.lpVerb = L"runas";
-        sei.lpFile = L"powershell.exe";
-        sei.lpParameters = params.c_str();
-        sei.lpDirectory = pkg.c_str();
-        sei.nShow = SW_SHOWNORMAL;
+        sei.lpVerb = L"runas";  // renaming a device needs administrator rights
+        sei.lpFile = exe;
+        sei.lpParameters = to_phonemic ? L"--rename-cable" : L"--restore-cable";
+        sei.nShow = SW_HIDE;
         if (!ShellExecuteExW(&sei) || !sei.hProcess) {
-            done(false, GetLastError() == ERROR_CANCELLED ? "Setup failed: cancelled."
-                                                          : "Setup failed: couldn't start PowerShell.");
+            done(false, GetLastError() == ERROR_CANCELLED ? "Rename cancelled." : "Couldn't start the rename.");
             return;
         }
-        WaitForSingleObject(sei.hProcess, INFINITE);
+        WaitForSingleObject(sei.hProcess, 60 * 1000);
         DWORD code = 1;
         GetExitCodeProcess(sei.hProcess, &code);
         CloseHandle(sei.hProcess);
         if (code == 0)
-            done(true, "PhoneMic driver installed.");
-        else if (code == 3010)
-            done(true, "PhoneMic driver installed. Restart Windows to finish (test mode was just enabled).");
+            done(true, to_phonemic ? "Renamed: apps now list \"PhoneMic Microphone\". Restart apps that were open."
+                                   : "Restored VB-CABLE's own names.");
+        else if (code == 3)
+            done(false, "Rename failed: VB-CABLE isn't installed or is disabled.");
         else
-            done(false, "Setup failed or was cancelled (see the PowerShell window for the reason).");
+            done(false, "Rename failed: Windows refused to change the device name.");
     }).detach();
 }
 
@@ -416,9 +403,6 @@ VirtualMic setup_virtual_mic(EventLog*) {
     return vm;
 }
 void teardown_virtual_mic() {}
-void install_driver_async(const VirtualMic&, std::function<void(bool, std::string)> done) {
-    done(false, "Not supported on this platform.");
-}
 
 #endif
 

@@ -3,9 +3,10 @@
 // Oboe captures the mic on a realtime thread; onAudioReady() only copies the
 // samples into a lock-free ring and wakes the sender thread (no syscalls, no
 // locks, no allocation on the audio thread). The sender thread cuts fixed 10 ms
-// frames, Opus-encodes them, frames them with the shared wire.h ([u16 len]
-// [packet]) and queues them. Android exposes RFCOMM sockets to Java only, so
-// Kotlin drains that queue (take_outgoing) onto the Bluetooth socket and feeds
+// frames, Opus-encodes them (and seals them with the PIN, for Wi-Fi), frames
+// them with the shared wire.h ([u16 len][packet]) and queues them. Kotlin owns
+// the link (Bluetooth RFCOMM is Java-only on Android; Wi-Fi UDP and USB TCP sit
+// beside it): it drains that queue (take_outgoing) onto the socket and feeds
 // the PC's STATUS replies back (feed_incoming).
 #pragma once
 
@@ -15,6 +16,7 @@
 #include <deque>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -29,19 +31,20 @@ namespace phonemic {
 class AudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStreamErrorCallback {
 public:
     // start() results (mirrored in NativeBridge.kt).
-    enum Result { kOk = 0, kAudioError = 3 };
+    enum Result { kOk = 0, kAudioError = 3, kCryptoError = 4 };
 
     AudioEngine();
     ~AudioEngine() override;
 
     // Open the mic and start producing frames. `voice_focus` picks the
     // platform's voice-processing input (noise suppression / echo cancellation)
-    // vs. a minimally processed one.
-    int start(bool voice_focus);
+    // vs. a minimally processed one. A non-empty `pin` seals every packet with
+    // it (Wi-Fi to a PC that has a PIN set); Bluetooth and USB pass "".
+    int start(bool voice_focus, const std::string& pin);
     void stop();  // idempotent
     void set_muted(bool m) { muted_.store(m, std::memory_order_relaxed); }
 
-    // ---- Bluetooth link (called from Kotlin's socket threads) ----
+    // ---- the link (called from Kotlin's socket threads) ----
     // Copy whole queued frames into buf (waits up to timeout_ms for the first).
     // Returns bytes copied, 0 on timeout, -1 once stopped.
     int take_outgoing(uint8_t* buf, size_t cap, int timeout_ms);
@@ -93,7 +96,7 @@ private:
     std::atomic<bool> opus_active_{false};
     std::vector<uint8_t> encoded_;
 
-    // ---- sender -> Bluetooth writer (framed packets) ----
+    // ---- sender -> link writer (framed packets) ----
     std::mutex out_mu_;
     std::condition_variable out_cv_;
     std::deque<std::vector<uint8_t>> out_;
@@ -101,6 +104,8 @@ private:
     std::vector<uint8_t> in_;  // STATUS bytes not yet a whole frame
 
     uint32_t session_ = 0;
+    bool encrypt_ = false;
+    uint8_t key_[32] = {};  // PM_KEY_LEN, derived once per session
     uint32_t seq_ = 0;
     uint64_t start_us_ = 0, samples_sent_ = 0;
     std::vector<uint8_t> packet_;

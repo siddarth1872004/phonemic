@@ -1,6 +1,7 @@
 // End-to-end tests of the receive pipeline: packets in -> processed audio out.
 #include "phonemic/receiver.hpp"
 
+#include <phonemic/crypto.h>
 #include <phonemic/wire.h>
 
 #include <chrono>
@@ -22,7 +23,7 @@ struct CollectSink : AudioSinkIface {
 };
 
 std::vector<uint8_t> audio_packet(uint32_t session, uint32_t seq, const std::vector<int16_t>& pcm,
-                                  uint32_t rate = 48000) {
+                                  uint32_t rate = 48000, const std::string& pass = "") {
     pm_audio_header h{};
     h.codec = PM_CODEC_PCM16;
     h.session_id = session;
@@ -34,8 +35,19 @@ std::vector<uint8_t> audio_packet(uint32_t session, uint32_t seq, const std::vec
         payload[2 * i] = static_cast<uint8_t>(pcm[i] & 0xFF);
         payload[2 * i + 1] = static_cast<uint8_t>((static_cast<uint16_t>(pcm[i]) >> 8) & 0xFF);
     }
-    std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + payload.size());
-    pm_encode_audio(out.data(), out.size(), &h, payload.data(), payload.size());
+    if (pass.empty()) {
+        std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + payload.size());
+        pm_encode_audio(out.data(), out.size(), &h, payload.data(), payload.size());
+        return out;
+    }
+    h.flags = PM_FLAG_ENCRYPTED;
+    h.payload_len = static_cast<uint16_t>(payload.size() + PM_TAG_LEN);
+    std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + h.payload_len);
+    pm_write_audio_header(out.data(), &h);
+    uint8_t key[32];
+    pm_derive_key(pass.data(), pass.size(), session, key);
+    pm_seal(key, out.data(), PM_AUDIO_HEADER_LEN, session, seq, h.timestamp_us, payload.data(), payload.size(),
+            out.data() + PM_AUDIO_HEADER_LEN);
     return out;
 }
 
@@ -46,8 +58,9 @@ std::vector<int16_t> tone(int seq, size_t n = 480) {
     return v;
 }
 
-SourceId phone(uint64_t conn) {
+SourceId phone(uint64_t conn, SourceId::Via via = SourceId::Via::Bluetooth) {
     SourceId s;
+    s.via = via;
     s.conn_id = conn;
     s.name = "Pixel " + std::to_string(conn);
     return s;
@@ -61,7 +74,10 @@ struct Rig {
         rx.set_mic_sink(&mic);
         rx.set_monitor_sink(&mon);
     }
-    uint8_t feed(const std::vector<uint8_t>& p, uint64_t conn = 1) { return rx.submit(phone(conn), p.data(), p.size()); }
+    uint8_t feed(const std::vector<uint8_t>& p, uint64_t conn = 1, SourceId::Via via = SourceId::Via::Bluetooth) {
+        return rx.submit(phone(conn, via), p.data(), p.size());
+    }
+    uint8_t feed_wifi(const std::vector<uint8_t>& p, uint64_t conn = 1) { return feed(p, conn, SourceId::Via::Wifi); }
 };
 }  // namespace
 
@@ -167,4 +183,54 @@ TEST(rx_status_reports_the_active_session_only) {
     const pm_status busy = r.rx.make_status(other, PM_STATUS_BUSY);
     CHECK_EQ(busy.state, PM_STATUS_BUSY);
     CHECK_EQ(busy.received, 0u);
+}
+
+TEST(rx_pin_on_pc_rejects_plaintext_wifi_injection) {
+    Rig r;
+    r.rx.set_passphrase("hunter2");
+    CHECK_EQ(r.feed_wifi(audio_packet(1, 0, tone(0))), PM_STATUS_PIN_REQUIRED);
+    CHECK(r.mic.got.empty());
+    const auto snap = r.rx.snapshot();
+    CHECK_EQ(snap.last_reject, PM_STATUS_PIN_REQUIRED);
+    CHECK(!snap.connected);
+}
+
+TEST(rx_bluetooth_and_usb_are_trusted_even_with_a_pin) {
+    Rig r;
+    r.rx.set_passphrase("hunter2");
+    CHECK_EQ(r.feed(audio_packet(1, 0, tone(0)), 1, SourceId::Via::Bluetooth), PM_STATUS_OK);
+    CHECK_EQ(r.mic.got.size(), 480u);
+    Rig u;
+    u.rx.set_passphrase("hunter2");
+    CHECK_EQ(u.feed(audio_packet(1, 0, tone(0)), 1, SourceId::Via::Usb), PM_STATUS_OK);
+    CHECK_EQ(u.mic.got.size(), 480u);
+    CHECK(u.rx.snapshot().via == SourceId::Via::Usb);
+}
+
+TEST(rx_decrypts_with_matching_pin_and_rejects_wrong_pin) {
+    Rig r;
+    r.rx.set_passphrase("hunter2");
+    r.feed_wifi(audio_packet(5, 0, tone(0), 48000, "hunter2"));
+    r.feed_wifi(audio_packet(5, 1, tone(1), 48000, "hunter2"));
+    CHECK_EQ(r.mic.got.size(), 960u);
+    CHECK(r.rx.snapshot().encrypted);
+
+    Rig w;
+    w.rx.set_passphrase("hunter3");
+    CHECK_EQ(w.feed_wifi(audio_packet(5, 0, tone(0), 48000, "hunter2")), PM_STATUS_PIN_WRONG);
+    CHECK(w.mic.got.empty());
+    CHECK_EQ(w.rx.snapshot().last_reject, PM_STATUS_PIN_WRONG);
+}
+
+TEST(rx_encrypted_audio_without_pc_pin_is_reported) {
+    Rig r;
+    CHECK_EQ(r.feed_wifi(audio_packet(5, 0, tone(0), 48000, "secret")), PM_STATUS_PIN_MISSING);
+    CHECK(r.mic.got.empty());
+    CHECK_EQ(r.rx.snapshot().last_reject, PM_STATUS_PIN_MISSING);
+}
+
+TEST(rx_connection_ids_are_unique) {
+    const uint64_t a = Receiver::new_conn_id(), b = Receiver::new_conn_id();
+    CHECK(a != b);
+    CHECK(a != 0 && b != 0);
 }

@@ -1,11 +1,12 @@
 // JNI glue between com.phonemic.NativeBridge and the native AudioEngine.
 // Control calls and telemetry cross here, plus the encoded frames on their way
-// to the Bluetooth socket (Java owns it) — never a raw audio buffer.
+// to the link's socket (Java owns it) — never a raw audio buffer.
 #include <jni.h>
 
 #include <algorithm>
 #include <memory>
 #include <mutex>
+#include <string>
 
 #include <phonemic/wire.h>
 
@@ -24,8 +25,18 @@ phonemic::AudioEngine* engine() {
 
 extern "C" {
 
-JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_start(JNIEnv*, jobject, jboolean voice_focus) {
-    return engine()->start(voice_focus == JNI_TRUE);
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jboolean voice_focus, jstring pin) {
+    std::string p;
+    if (pin) {
+        const char* c = env->GetStringUTFChars(pin, nullptr);
+        if (c) {
+            p = c;
+            env->ReleaseStringUTFChars(pin, c);
+        }
+    }
+    const int r = engine()->start(voice_focus == JNI_TRUE, p);
+    std::fill(p.begin(), p.end(), '\0');
+    return r;
 }
 
 JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_stop(JNIEnv*, jobject) { engine()->stop(); }

@@ -3,7 +3,7 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg"
+    android:background="?attr/pmBg"
     android:fillViewport="true">
 
     <LinearLayout
@@ -29,7 +29,7 @@
                 android:contentDescription="@null"
                 android:padding="10dp"
                 android:src="@drawable/ic_mic"
-                android:tint="@color/on_accent" />
+                android:tint="?attr/pmOnAccent" />
 
             <LinearLayout
                 android:layout_width="wrap_content"
@@ -42,14 +42,14 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="sans-serif-medium"
                     android:text="@string/app_name"
-                    android:textColor="@color/text"
+                    android:textColor="?attr/pmText"
                     android:textSize="24sp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/tagline"
-                    android:textColor="@color/muted"
+                    android:textColor="?attr/pmMuted"
                     android:textSize="13sp" />
             </LinearLayout>
         </LinearLayout>
@@ -61,11 +61,36 @@
                 style="@style/Label"
                 android:text="@string/pc_label" />
 
+            <!-- Bluetooth / Wi-Fi / USB -->
+            <LinearLayout
+                android:id="@+id/linkRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/linkBluetooth"
+                    style="@style/Segment"
+                    android:text="@string/link_bluetooth" />
+
+                <Button
+                    android:id="@+id/linkWifi"
+                    style="@style/Segment"
+                    android:layout_marginHorizontal="6dp"
+                    android:text="@string/link_wifi" />
+
+                <Button
+                    android:id="@+id/linkUsb"
+                    style="@style/Segment"
+                    android:text="@string/link_usb" />
+            </LinearLayout>
+
             <LinearLayout
                 android:id="@+id/pcRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="10dp"
                 android:background="?android:attr/selectableItemBackground"
                 android:gravity="center_vertical"
                 android:minHeight="48dp"
@@ -85,7 +110,7 @@
                         android:fontFamily="sans-serif-medium"
                         android:maxLines="1"
                         android:text="@string/choose_pc"
-                        android:textColor="@color/text"
+                        android:textColor="?attr/pmText"
                         android:textSize="20sp" />
 
                     <TextView
@@ -93,7 +118,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/pc_hint_choose"
-                        android:textColor="@color/muted"
+                        android:textColor="?attr/pmMuted"
                         android:textSize="12sp" />
                 </LinearLayout>
 
@@ -103,14 +128,42 @@
                     android:layout_height="24dp"
                     android:contentDescription="@string/choose_pc"
                     android:src="@drawable/ic_chevron"
-                    android:tint="@color/muted" />
+                    android:tint="?attr/pmMuted" />
+            </LinearLayout>
+
+            <!-- Wi-Fi only: the PIN set in PhoneMic on the PC (if any). -->
+            <LinearLayout
+                android:id="@+id/pinRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?android:attr/selectableItemBackground"
+                android:gravity="center_vertical"
+                android:minHeight="44dp"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/pin_label"
+                    android:textColor="?attr/pmText"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/pinValue"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/pin_none"
+                    android:textColor="?attr/pmMuted"
+                    android:textSize="14sp" />
             </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginVertical="16dp"
-                android:background="@color/edge" />
+                android:background="?attr/pmEdge" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -124,7 +177,7 @@
                     android:layout_height="8dp"
                     android:layout_marginEnd="10dp"
                     android:background="@drawable/dot"
-                    android:backgroundTint="@color/muted" />
+                    android:backgroundTint="?attr/pmMuted" />
 
                 <TextView
                     android:id="@+id/statusText"
@@ -132,7 +185,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:text="@string/status_idle"
-                    android:textColor="@color/muted"
+                    android:textColor="?attr/pmMuted"
                     android:textSize="14sp" />
             </LinearLayout>
 
@@ -152,7 +205,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
                 android:fontFeatureSettings="tnum"
-                android:textColor="@color/muted"
+                android:textColor="?attr/pmMuted"
                 android:textSize="11sp" />
         </LinearLayout>
 
@@ -175,14 +228,14 @@
                     android:layout_height="wrap_content"
                     android:fontFamily="sans-serif-medium"
                     android:text="@string/voice_focus"
-                    android:textColor="@color/text"
+                    android:textColor="?attr/pmText"
                     android:textSize="16sp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="@string/voice_focus_desc"
-                    android:textColor="@color/muted"
+                    android:textColor="?attr/pmMuted"
                     android:textSize="13sp" />
             </LinearLayout>
 
@@ -198,15 +251,56 @@
                 android:trackTint="@color/switch_track_tint" />
         </LinearLayout>
 
+        <!-- Appearance: theme + accent, same choices as the desktop app -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                style="@style/Label"
+                android:text="@string/appearance_label" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/themeOled"
+                    style="@style/Segment"
+                    android:text="@string/theme_oled" />
+
+                <Button
+                    android:id="@+id/themeDark"
+                    style="@style/Segment"
+                    android:layout_marginHorizontal="6dp"
+                    android:text="@string/theme_dark" />
+
+                <Button
+                    android:id="@+id/themeLight"
+                    style="@style/Segment"
+                    android:text="@string/theme_light" />
+            </LinearLayout>
+
+            <!-- Accent swatches, filled in by MainActivity -->
+            <LinearLayout
+                android:id="@+id/accentRow"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal" />
+        </LinearLayout>
+
         <!-- Start / Stop -->
         <Button
             android:id="@+id/toggleButton"
             style="@style/Pill"
             android:layout_height="58dp"
             android:layout_marginTop="24dp"
-            android:backgroundTint="@color/accent"
+            android:backgroundTint="?attr/pmAccent"
             android:text="@string/start"
-            android:textColor="@color/on_accent"
+            android:textColor="?attr/pmOnAccent"
             android:textSize="17sp" />
 
         <Button
@@ -214,9 +308,9 @@
             style="@style/Pill"
             android:layout_height="50dp"
             android:layout_marginTop="10dp"
-            android:backgroundTint="@color/control"
+            android:backgroundTint="?attr/pmControl"
             android:text="@string/mute"
-            android:textColor="@color/text"
+            android:textColor="?attr/pmText"
             android:textSize="15sp"
             android:visibility="gone" />
 
@@ -227,7 +321,7 @@
             android:layout_marginTop="18dp"
             android:gravity="center"
             android:text="@string/background_hint"
-            android:textColor="@color/muted"
+            android:textColor="?attr/pmMuted"
             android:textSize="12sp" />
 
         <TextView
@@ -237,7 +331,7 @@
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="6dp"
             android:alpha="0.6"
-            android:textColor="@color/muted"
+            android:textColor="?attr/pmMuted"
             android:textSize="11sp" />
 
     </LinearLayout>

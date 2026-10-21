@@ -8,8 +8,10 @@ App::App() {
     settings = Settings::load(Settings::default_file());
     vmic = setup_virtual_mic(&log);
     refresh_devices();
+    refresh_addresses();
 
     rx_ = std::make_unique<Receiver>(&log);
+    rx_->set_passphrase(settings.passphrase);
     rx_->set_voice_focus(settings.voice_focus);
     rx_->set_effect(effect_from_u8(static_cast<uint8_t>(settings.effect)));
     rx_->set_gain_db(settings.gain_db);
@@ -22,15 +24,19 @@ App::App() {
 
     bt_ = std::make_unique<BluetoothServer>(rx_.get(), &log);
     bt_->start();
+    wifi_ = std::make_unique<WifiServer>(rx_.get(), &log);
+    if (settings.wifi_enabled) start_wifi();
+    usb_ = std::make_unique<UsbServer>(rx_.get(), &log);
+    if (settings.usb_enabled) start_usb();
 }
 
 App::~App() {
+    adb_.stop();
+    usb_->stop();
+    wifi_->stop();
     bt_->stop();
     rx_->set_mic_sink(nullptr);
     rx_->set_monitor_sink(nullptr);
-#ifdef _WIN32
-    drv_.reset();
-#endif
     mic_out_.close();
     mon_out_.close();
     teardown_virtual_mic();
@@ -39,11 +45,7 @@ App::~App() {
 
 void App::tick() {
     snap = rx_->snapshot();
-#ifdef _WIN32
-    mic_stats = drv_ ? drv_->stats() : mic_out_.stats();
-#else
     mic_stats = mic_out_.stats();
-#endif
     bool redetect = false;
     {
         std::lock_guard<std::mutex> lk(setup_->mu);
@@ -55,6 +57,7 @@ void App::tick() {
         settings.save(Settings::default_file());
         dirty_at_ = 0;
     }
+    if (now - last_addr_refresh_ > 5000) refresh_addresses();
     // The user may change the default microphone in the system settings.
     if (vmic.ready && now - last_default_check_ > 3000) {
         default_mic = default_mic_state(vmic);
@@ -67,21 +70,6 @@ void App::open_mic_output() {
     // Detach the receiver first: it must never write into a sink being replaced.
     rx_->set_mic_sink(nullptr);
     mic_out_.close();
-#ifdef _WIN32
-    drv_.reset();
-    // Automatic + the PhoneMic driver: write straight into its ring.
-    if (settings.mic_device.empty() && vmic.direct_feed) {
-        std::string err;
-        drv_ = DriverFeed::open(&err);
-        if (drv_) {
-            drv_->set_latency_ms(static_cast<uint32_t>(settings.latency_ms));
-            rx_->set_mic_sink(drv_.get());
-            mic_is_virtual = true;
-            return;
-        }
-        log.add("PhoneMic driver: " + err);
-    }
-#endif
     mic_out_.set_latency_ms(static_cast<uint32_t>(settings.latency_ms));
     // Automatic = the virtual mic's playback side if there is one. The old app on
     // Linux opened the default device and then *never* fed the virtual mic.
@@ -100,9 +88,6 @@ void App::open_mic_output() {
 void App::redetect_virtual_mic() {
     rx_->set_mic_sink(nullptr);
     mic_out_.close();
-#ifdef _WIN32
-    drv_.reset();
-#endif
     teardown_virtual_mic();
     vmic = setup_virtual_mic(&log);
     refresh_devices();
@@ -164,14 +149,91 @@ void App::select_monitor_device(const std::string& name) {
 void App::set_latency_ms(int ms) {
     settings.latency_ms = ms;
     mic_out_.set_latency_ms(static_cast<uint32_t>(ms));
-#ifdef _WIN32
-    if (drv_) drv_->set_latency_ms(static_cast<uint32_t>(ms));
-#endif
     mon_out_.set_latency_ms(static_cast<uint32_t>(ms));
     mark_dirty();
 }
 
+void App::set_theme(int t) {
+    settings.theme = t;
+    mark_dirty();
+}
+
+void App::set_accent(int a) {
+    settings.accent = a;
+    mark_dirty();
+}
+
 void App::refresh_devices() { devices = AudioSystem::get().playback_devices(); }
+
+void App::refresh_addresses() {
+    addresses = net::local_addresses();
+    last_addr_refresh_ = mono_ms();
+}
+
+void App::start_wifi() {
+    wifi_error.clear();
+    std::string err;
+    if (!wifi_->start(settings.port, &err)) {
+        wifi_error = err;
+        log.add("Wi-Fi: " + err);
+    }
+}
+
+void App::start_usb() {
+    usb_error.clear();
+    std::string err;
+    if (!usb_->start(settings.port, &err)) {
+        usb_error = err;
+        log.add("USB: " + err);
+        return;
+    }
+    adb_.start(usb_->port());
+}
+
+void App::set_wifi_enabled(bool on) {
+    settings.wifi_enabled = on;
+    mark_dirty();
+    wifi_->stop();
+    wifi_error.clear();
+    if (on) start_wifi();
+}
+
+void App::set_port(uint16_t port) {
+    if (port == settings.port) return;
+    settings.port = port;
+    mark_dirty();
+    if (settings.wifi_enabled) {
+        wifi_->stop();
+        start_wifi();
+    }
+    if (settings.usb_enabled) {
+        adb_.stop();
+        usb_->stop();
+        start_usb();
+    }
+}
+
+void App::apply_passphrase(const std::string& p) {
+    if (p == settings.passphrase) return;
+    settings.passphrase = p;
+    rx_->set_passphrase(p);
+    log.add(p.empty() ? "PIN removed: Wi-Fi phones need no PIN" : "PIN set: Wi-Fi phones must use it");
+    mark_dirty();
+}
+
+void App::set_remember_passphrase(bool on) {
+    settings.remember_passphrase = on;
+    mark_dirty();
+}
+
+void App::set_usb_enabled(bool on) {
+    settings.usb_enabled = on;
+    mark_dirty();
+    adb_.stop();
+    usb_->stop();
+    usb_error.clear();
+    if (on) start_usb();
+}
 
 std::string App::setup_message() const {
     std::lock_guard<std::mutex> lk(setup_->mu);
@@ -211,18 +273,35 @@ void App::set_persistent_mic(bool on) {
 }
 #endif
 
-void App::install_driver() {
+#ifdef _WIN32
+void App::install_vbcable() {
     {
         std::lock_guard<std::mutex> lk(setup_->mu);
         if (setup_->busy) return;
         setup_->busy = true;
-        setup_->msg = "Installing the PhoneMic driver...";
+        setup_->msg = "Installing VB-CABLE (approve the Windows prompt)...";
     }
-    install_driver_async(vmic, [st = setup_](bool, std::string msg) {
+    install_vbcable_async([st = setup_](bool, std::string msg) {
         std::lock_guard<std::mutex> lk(st->mu);
         st->busy = false;
         st->msg = std::move(msg);
         st->redetect = true;
     });
 }
+
+void App::rename_cable(bool to_phonemic) {
+    {
+        std::lock_guard<std::mutex> lk(setup_->mu);
+        if (setup_->busy) return;
+        setup_->busy = true;
+        setup_->msg = "Renaming the cable (approve the Windows prompt)...";
+    }
+    rename_cable_async(to_phonemic, [st = setup_](bool, std::string msg) {
+        std::lock_guard<std::mutex> lk(st->mu);
+        st->busy = false;
+        st->msg = std::move(msg);
+        st->redetect = true;
+    });
+}
+#endif
 }  // namespace phonemic

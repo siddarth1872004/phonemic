@@ -19,7 +19,9 @@ ctest --test-dir build --output-on-failure
 | `test_opus.cpp` | Opus round trip (pitch, < 70 kbps), receiver decoding, a dropped packet rebuilt from FEC, corrupt packet concealed |
 | `test_settings.cpp` | settings round trip |
 | `test_persistent_mic.cpp` | Linux "keep the mic when PhoneMic is closed": PipeWire drop-in, PulseAudio block appended and removed byte-for-byte, refusal without a system config |
-| `test_ipc.cpp` | driver ring layout and SPSC rules; the feeder holding latency against a driver clock 300 ppm off for 3 simulated minutes; Windows: opening and feeding a stand-in for the driver's ring, version mismatch rejected |
+| `test_usb.cpp` | framed audio over TCP plays and is answered with STATUS; the listener accepts loopback only |
+| `test_wifi.cpp` | HELLO answered with ANNOUNCE, UDP audio, the PIN policy (plaintext refused when a PIN is set, wrong PIN reported); a second server can't take the same port |
+| `test_crypto.cpp` | Argon2id and XChaCha20-Poly1305 against reference / libsodium vectors, round trip, every auth failure, per-session keys, nonce layout |
 | `test_wire_c99.c` | the shared headers compile as strict C99 |
 
 CI also runs the suite under **AddressSanitizer + UndefinedBehaviorSanitizer**,
@@ -48,20 +50,28 @@ turns on "keep it when PhoneMic is closed", restarts PulseAudio and checks the
 microphone is there without PhoneMic running.
 
 Run it yourself to check a setup: `phonemic-vmic-check --setup [--default]`
-(or `--list`). On Windows it feeds the PhoneMic driver and records its endpoint.
+(or `--list`). On Windows it plays into VB-CABLE and records its other side
+(either name, before or after **Rename to PhoneMic**). The VB-CABLE install,
+rename and default-speaker code has no automated tests.
 
 ## With a phone
 
-1. Pair the phone with the PC (Bluetooth settings on either side).
-2. Run the receiver without touching the system microphone:
+1. Run the receiver without touching the system microphone:
    ```sh
-   ./build/bin/phonemic-receiver --null
+   ./build/bin/phonemic-receiver --null           # Bluetooth + Wi-Fi
+   ./build/bin/phonemic-receiver --null --usb     # also USB (needs adb)
+   ./build/bin/phonemic-receiver --null --pin 1234
    ```
    While the phone streams it prints the packets, loss, jitter and buffer
    every 5 s.
-3. In the app, choose the PC and tap **Start**. Turning the PC's Bluetooth off
-   and on again, or closing and reopening the receiver, checks that the phone
-   reconnects by itself.
+2. In the app pick the link and tap **Start**:
+   - **Bluetooth:** pair the phone with the PC first, then choose the PC.
+   - **Wi-Fi:** **Find your PC**, or enter the address. With `--pin`, try the
+     right PIN, a wrong one and none: the phone should explain each.
+   - **USB:** plug in a phone with USB debugging allowed.
+3. Turning the link off and on (Bluetooth, Wi-Fi, unplugging the cable) or
+   closing and reopening the receiver checks that the phone reconnects by
+   itself.
 
 On Linux, `bluetoothctl show` confirms the adapter is powered, and
 `journalctl -u bluetooth` shows BlueZ's view of the connection.

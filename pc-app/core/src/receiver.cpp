@@ -1,5 +1,7 @@
 #include "phonemic/receiver.hpp"
 
+#include <phonemic/crypto.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -7,9 +9,15 @@
 namespace phonemic {
 
 namespace {
+constexpr size_t kMaxCachedKeys = 8;
+constexpr size_t kMaxKdfPerSecond = 3;
+
 const char* state_text(uint8_t s) {
     switch (s) {
         case PM_STATUS_OK: return "ok";
+        case PM_STATUS_PIN_REQUIRED: return "rejected unencrypted Wi-Fi audio (a PIN is set on this PC)";
+        case PM_STATUS_PIN_MISSING: return "encrypted audio arrived but no PIN is set on this PC";
+        case PM_STATUS_PIN_WRONG: return "PIN mismatch (could not decrypt)";
         case PM_STATUS_BUSY: return "ignored: another phone is already streaming";
         case PM_STATUS_UNSUPPORTED: return "unsupported audio format";
     }
@@ -17,14 +25,51 @@ const char* state_text(uint8_t s) {
 }
 }  // namespace
 
+const char* via_name(SourceId::Via v) {
+    switch (v) {
+        case SourceId::Via::Usb: return "USB";
+        case SourceId::Via::Wifi: return "Wi-Fi";
+        case SourceId::Via::Bluetooth: break;
+    }
+    return "Bluetooth";
+}
+
+std::string SourceId::describe() const {
+    if (!name.empty()) return name;
+    return via == Via::Usb ? std::string("phone on USB") : std::string("phone");
+}
+
+uint64_t Receiver::new_conn_id() {
+    static std::atomic<uint64_t> next{1};
+    return next.fetch_add(1);
+}
+
 Receiver::Receiver(EventLog* log) : log_(log) {
+    plain_.resize(PM_MAX_PAYLOAD);
     resampler_.set_rates(PM_SAMPLE_RATE, PM_SAMPLE_RATE);
     scratch_in_.reserve(PM_MAX_PAYLOAD);
     scratch_rs_.reserve(PM_MAX_PAYLOAD * 4);
     scratch_dn_.reserve(PM_MAX_PAYLOAD * 4);
 }
 
-Receiver::~Receiver() = default;
+Receiver::~Receiver() {
+    for (auto& [s, k] : keys_) crypto_wipe(k.key, sizeof k.key);
+}
+
+void Receiver::set_passphrase(const std::string& p) {
+    std::lock_guard<std::mutex> lk(settings_mu_);
+    passphrase_ = p;
+}
+
+bool Receiver::has_passphrase() const {
+    std::lock_guard<std::mutex> lk(settings_mu_);
+    return !passphrase_.empty();
+}
+
+bool Receiver::busy() const {
+    std::lock_guard<std::mutex> lk(pipe_mu_);
+    return have_active_ && mono_ms() - active_last_ms_ < kSessionTimeoutMs;
+}
 
 void Receiver::set_mic_sink(AudioSinkIface* s) {
     std::lock_guard<std::mutex> lk(pipe_mu_);
@@ -75,6 +120,41 @@ void Receiver::reject(const SourceId& src, uint8_t state, uint64_t now) {
     if (changed && log_) log_->add(src.describe() + ": " + state_text(state));
 }
 
+bool Receiver::key_for(uint32_t session, const std::string& pass, uint8_t out[32], uint64_t now) {
+    if (pass != keys_pass_) {
+        for (auto& [s, k] : keys_) crypto_wipe(k.key, sizeof k.key);
+        keys_.clear();
+        keys_pass_ = pass;
+    }
+    auto it = keys_.find(session);
+    if (it != keys_.end()) {
+        it->second.used_ms = now;
+        std::memcpy(out, it->second.key, 32);
+        return true;
+    }
+    // Argon2id is deliberately expensive; cap derivations so a flood of fake
+    // session ids can't pin a CPU core.
+    kdf_times_.erase(std::remove_if(kdf_times_.begin(), kdf_times_.end(),
+                                    [&](uint64_t t) { return now - t >= 1000; }),
+                     kdf_times_.end());
+    if (kdf_times_.size() >= kMaxKdfPerSecond) return false;
+    kdf_times_.push_back(now);
+
+    KeyEntry e{};
+    if (pm_derive_key(pass.data(), pass.size(), session, e.key) != 0) return false;
+    e.used_ms = now;
+    if (keys_.size() >= kMaxCachedKeys) {
+        auto oldest = std::min_element(keys_.begin(), keys_.end(), [](const auto& a, const auto& b) {
+            return a.second.used_ms < b.second.used_ms;
+        });
+        crypto_wipe(oldest->second.key, 32);
+        keys_.erase(oldest);
+    }
+    std::memcpy(out, e.key, 32);
+    keys_[session] = e;
+    return true;
+}
+
 void Receiver::begin_session(const SourceId& src, const pm_audio_header& h, uint64_t now) {
     have_active_ = true;
     active_ = src;
@@ -122,8 +202,36 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
         return PM_STATUS_UNSUPPORTED;
     }
 
+    std::string pass;
+    {
+        std::lock_guard<std::mutex> lk(settings_mu_);
+        pass = passphrase_;
+    }
     const uint8_t* pcm = payload;
-    const size_t pcm_len = h.payload_len;
+    size_t pcm_len = h.payload_len;
+    const bool encrypted = (h.flags & PM_FLAG_ENCRYPTED) != 0;
+    if (encrypted) {
+        if (pass.empty()) {
+            reject(src, PM_STATUS_PIN_MISSING, now);
+            return PM_STATUS_PIN_MISSING;
+        }
+        uint8_t key[32];
+        if (!key_for(h.session_id, pass, key, now)) return PM_STATUS_OK;  // rate-limited: drop quietly
+        const int ok = pm_open(key, data, PM_AUDIO_HEADER_LEN, h.session_id, h.seq, h.timestamp_us,
+                               payload, h.payload_len, plain_.data());
+        crypto_wipe(key, sizeof key);
+        if (ok != 0) {
+            reject(src, PM_STATUS_PIN_WRONG, now);
+            return PM_STATUS_PIN_WRONG;
+        }
+        pcm = plain_.data();
+        pcm_len = h.payload_len - PM_TAG_LEN;
+    } else if (!pass.empty() && src.via == SourceId::Via::Wifi) {
+        // Bluetooth and USB are trusted links; on Wi-Fi a PIN on this PC means
+        // "only accept audio sealed with it".
+        reject(src, PM_STATUS_PIN_REQUIRED, now);
+        return PM_STATUS_PIN_REQUIRED;
+    }
     if (pcm_len == 0 || (h.codec == PM_CODEC_PCM16 && pcm_len % 2 != 0)) {
         malformed_.fetch_add(1, std::memory_order_relaxed);
         return PM_STATUS_UNSUPPORTED;
@@ -132,6 +240,7 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
     // A codec switch mid-stream can only mean the sender restarted: start over.
     if (!is_active || h.codec != active_codec_) begin_session(src, h, now);
     active_last_ms_ = now;
+    active_encrypted_ = encrypted;
     if (h.codec == PM_CODEC_PCM16 && h.sample_rate != active_rate_) {
         active_rate_ = h.sample_rate;
         resampler_.set_rates(h.sample_rate, PM_SAMPLE_RATE);
@@ -248,6 +357,8 @@ Receiver::Snapshot Receiver::snapshot() const {
     s.voice_prob = s.connected ? vad_.load() : 0.0f;
     if (have_active_) {
         s.peer = active_.describe();
+        s.via = active_.via;
+        s.encrypted = active_encrypted_;
         s.session_received = session_received_.load();
         s.session_lost = session_lost_.load();
         s.sample_rate = active_rate_;

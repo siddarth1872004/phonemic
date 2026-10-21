@@ -1,6 +1,8 @@
 #include "phonemic/process.hpp"
 
+#include <algorithm>
 #include <chrono>
+#include <vector>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -12,6 +14,8 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -66,15 +70,32 @@ ProcessResult run_process(const std::vector<std::string>& argv, int timeout_ms) 
     HANDLE rd = nullptr, wr = nullptr;
     if (!CreatePipe(&rd, &wr, &sa, 0)) return r;
     SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
-    STARTUPINFOW si{};
-    si.cb = sizeof si;
-    si.dwFlags = STARTF_USESTDHANDLES;
-    si.hStdOutput = wr;
-    si.hStdError = wr;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    // The child inherits the output pipe and nothing else. Sockets are
+    // inheritable by default, and `adb` leaves a server running that would keep
+    // our listening ports open after PhoneMic exits.
+    SIZE_T attr_size = 0;
+    InitializeProcThreadAttributeList(nullptr, 1, 0, &attr_size);
+    std::vector<unsigned char> attr_buf(attr_size);
+    auto* attrs = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attr_buf.data());
+    if (!InitializeProcThreadAttributeList(attrs, 1, 0, &attr_size)) {
+        CloseHandle(rd);
+        CloseHandle(wr);
+        return r;
+    }
+    HANDLE inherit[] = {wr};
+    UpdateProcThreadAttribute(attrs, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherit, sizeof inherit, nullptr, nullptr);
+    STARTUPINFOEXW si{};
+    si.StartupInfo.cb = sizeof si;
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    si.StartupInfo.hStdOutput = wr;
+    si.StartupInfo.hStdError = wr;
+    si.StartupInfo.hStdInput = nullptr;
+    si.lpAttributeList = attrs;
     PROCESS_INFORMATION pi{};
-    const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
-                                   nullptr, &si, &pi);
+    const BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE,
+                                   CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT, nullptr, nullptr,
+                                   &si.StartupInfo, &pi);
+    DeleteProcThreadAttributeList(attrs);
     CloseHandle(wr);
     if (!ok) {
         CloseHandle(rd);
@@ -132,6 +153,10 @@ ProcessResult run_process(const std::vector<std::string>& argv, int timeout_ms) 
     std::vector<char*> args;
     for (const auto& a : argv) args.push_back(const_cast<char*>(a.c_str()));
     args.push_back(nullptr);
+    struct rlimit rl {};
+    const int max_fd = ::getrlimit(RLIMIT_NOFILE, &rl) == 0 && rl.rlim_cur != RLIM_INFINITY
+                           ? static_cast<int>(std::min<rlim_t>(rl.rlim_cur, 65536))
+                           : 4096;
     const pid_t pid = ::fork();
     if (pid < 0) {
         ::close(fds[0]);
@@ -146,6 +171,12 @@ ProcessResult run_process(const std::vector<std::string>& argv, int timeout_ms) 
         ::close(fds[0]);
         ::close(fds[1]);
         ::close(errpipe[0]);
+        // Nothing but stdio crosses exec: `adb` leaves a server running that
+        // would otherwise keep our sockets (and listening ports) open.
+#ifdef SYS_close_range
+        if (::syscall(SYS_close_range, 3u, ~0u, 4u /* CLOSE_RANGE_CLOEXEC */) != 0)
+#endif
+            for (int fd = 3; fd < max_fd; ++fd) ::fcntl(fd, F_SETFD, FD_CLOEXEC);
         ::execvp(args[0], args.data());
         const char c = 1;
         (void)!::write(errpipe[1], &c, 1);

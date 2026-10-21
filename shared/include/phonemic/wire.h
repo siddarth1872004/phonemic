@@ -6,11 +6,15 @@
  * implementation that could drift. It is plain C99 (header-only, no allocation,
  * no dependencies) so it also builds in C test harnesses.
  *
- * Transport: one Bluetooth RFCOMM connection from the phone to the PC, found by
- * the service UUID PM_SERVICE_UUID. RFCOMM is a byte stream, so every packet is
- * sent as a frame: [u16 little-endian length][one packet]. Bluetooth pairing
- * authenticates both ends and the link is encrypted by the radio, so packets
- * carry no crypto of their own.
+ * Transports (the packets are the same on all three):
+ *  - Bluetooth: an RFCOMM connection to the service UUID PM_SERVICE_UUID.
+ *  - USB: a TCP connection through `adb reverse` to 127.0.0.1:PM_DEFAULT_PORT.
+ *  - Wi-Fi: UDP datagrams to PM_DEFAULT_PORT, one packet per datagram; the
+ *    phone finds the PC with HELLO / ANNOUNCE broadcasts.
+ * RFCOMM and TCP are byte streams, so there every packet is sent as a frame:
+ * [u16 little-endian length][one packet]. Bluetooth pairing encrypts its link
+ * and USB never leaves the cable; on Wi-Fi the payload can be sealed with a
+ * shared PIN (crypto.h).
  *
  * Every packet starts with a 4-byte common prefix:
  *
@@ -25,13 +29,24 @@
  *
  * AUDIO (kind 0, phone -> PC), 28-byte header:
  *     4     1   codec         PM_CODEC_*
- *     5     1   flags         0 (reserved)
- *     6     2   payload_len   bytes after the header
+ *     5     1   flags         bit0 = payload encrypted (XChaCha20-Poly1305)
+ *     6     2   payload_len   bytes after the header (incl. 16-byte tag if encrypted)
  *     8     4   session_id    random per stream start, never 0
  *    12     4   seq           per-session packet counter, starts at 0
  *    16     8   timestamp_us  sender's monotonic capture clock
  *    24     4   sample_rate   Hz of the PCM (receiver resamples if != 48000)
- *    28   ...   payload       one Opus packet, or mono PCM16 LE
+ *    28   ...   payload       one Opus packet, or mono PCM16 LE (or ciphertext||tag)
+ *
+ * HELLO (kind 1, phone -> broadcast UDP:4010): discovery probe, 12 bytes.
+ *     4     4   nonce         echoed in the ANNOUNCE so replies can be matched
+ *     8     4   reserved      0
+ *
+ * ANNOUNCE (kind 2, PC -> phone): discovery reply, 12 + name_len bytes.
+ *     4     4   nonce         copied from the HELLO
+ *     8     2   audio_port    UDP port the PC receives audio on
+ *    10     1   flags         bit0 = PIN required, bit1 = busy (someone streaming)
+ *    11     1   name_len      <= PM_MAX_NAME
+ *    12   ...   name          UTF-8 host name (not NUL-terminated)
  *
  * STATUS (kind 3, PC -> phone, ~2 Hz): receiver feedback, 24 bytes.
  *     4     1   state         PM_STATUS_*
@@ -41,8 +56,6 @@
  *    12     4   received      audio packets accepted this session
  *    16     4   lost          packets concealed (lost) this session
  *    20     4   reserved      0
- *
- * Kinds 1 and 2 were Wi-Fi discovery (HELLO / ANNOUNCE) and are retired.
  */
 #ifndef PHONEMIC_WIRE_H
 #define PHONEMIC_WIRE_H
@@ -59,6 +72,8 @@ extern "C" {
 #define PM_VERSION          2
 
 #define PM_KIND_AUDIO       0
+#define PM_KIND_HELLO       1
+#define PM_KIND_ANNOUNCE    2
 #define PM_KIND_STATUS      3
 
 /* The RFCOMM service the PC publishes (SDP) and the phone connects to. */
@@ -68,22 +83,35 @@ extern "C" {
 #define PM_CODEC_PCM16      0
 #define PM_CODEC_OPUS       1 /* one Opus packet per 10 ms frame, decoded at 48 kHz */
 
+#define PM_FLAG_ENCRYPTED   0x01
+
 #define PM_AUDIO_HEADER_LEN   28
+#define PM_HELLO_LEN          12
+#define PM_ANNOUNCE_MIN_LEN   12
 #define PM_STATUS_LEN         24
-/* Each packet on the RFCOMM stream is preceded by its u16 LE length. */
+#define PM_MAX_NAME           63
+/* Each packet on an RFCOMM or TCP stream is preceded by its u16 LE length. */
 #define PM_FRAME_PREFIX_LEN   2
+
+#define PM_DEFAULT_PORT       4010
 
 #define PM_SAMPLE_RATE        48000
 #define PM_MIN_SAMPLE_RATE    8000
 #define PM_MAX_SAMPLE_RATE    96000
-/* 10 ms frames: 480 samples at 48 kHz (one Opus packet is ~60-100 bytes). */
+/* 10 ms frames: 480 samples at 48 kHz = 960 PCM bytes; stays under the MTU. */
 #define PM_FRAME_MS           10
-/* Largest payload either end accepts (keeps frames well under 64 KiB). */
+/* Largest payload either end accepts (keeps packets well under 64 KiB). */
 #define PM_MAX_PAYLOAD        4096
 #define PM_MAX_DATAGRAM       (PM_AUDIO_HEADER_LEN + PM_MAX_PAYLOAD)
 
-/* STATUS.state (1-3 were PIN errors and are retired) */
+#define PM_ANNOUNCE_FLAG_PIN  0x01
+#define PM_ANNOUNCE_FLAG_BUSY 0x02
+
+/* STATUS.state */
 #define PM_STATUS_OK            0 /* receiving and playing */
+#define PM_STATUS_PIN_REQUIRED  1 /* PC has a PIN; phone sent plaintext over Wi-Fi */
+#define PM_STATUS_PIN_MISSING   2 /* phone encrypts; PC has no PIN set */
+#define PM_STATUS_PIN_WRONG     3 /* decryption failed: PINs differ */
 #define PM_STATUS_BUSY          4 /* another device is already streaming */
 #define PM_STATUS_UNSUPPORTED   5 /* codec / sample rate not supported */
 
@@ -103,13 +131,21 @@ typedef enum pm_result {
 /* Decoded AUDIO header. */
 typedef struct pm_audio_header {
     uint8_t  codec;        /* PM_CODEC_* */
-    uint8_t  flags;        /* 0 */
+    uint8_t  flags;        /* PM_FLAG_* */
     uint16_t payload_len;
     uint32_t session_id;
     uint32_t seq;
     uint64_t timestamp_us;
     uint32_t sample_rate;
 } pm_audio_header;
+
+typedef struct pm_announce {
+    uint32_t nonce;
+    uint16_t audio_port;
+    uint8_t  flags;
+    uint8_t  name_len;
+    char     name[PM_MAX_NAME + 1]; /* NUL-terminated after decode */
+} pm_announce;
 
 typedef struct pm_status {
     uint8_t  state;
@@ -166,7 +202,9 @@ static inline void pm_write_frame_prefix(uint8_t out[PM_FRAME_PREFIX_LEN], size_
 
 /* ---- AUDIO ---------------------------------------------------------------- */
 
-/* Write a 28-byte AUDIO header. `h->payload_len` is written as given. */
+/* Write a 28-byte AUDIO header. `h->payload_len` is written as given (for an
+ * encrypted packet it must already include the tag). The header is also the
+ * AEAD's associated data. */
 static inline void pm_write_audio_header(uint8_t out[PM_AUDIO_HEADER_LEN],
                                          const pm_audio_header* h) {
     pm_write_prefix(out, PM_KIND_AUDIO);
@@ -179,7 +217,7 @@ static inline void pm_write_audio_header(uint8_t out[PM_AUDIO_HEADER_LEN],
     pm_w32(out + 24, h->sample_rate);
 }
 
-/* Encode a full AUDIO packet. Returns total bytes written (> 0) or a
+/* Encode a full plaintext AUDIO packet. Returns total bytes written (> 0) or a
  * negative pm_result. payload_len in `h` is ignored and computed from `len`, so a
  * packet whose declared length disagrees with its contents cannot be produced. */
 static inline int pm_encode_audio(uint8_t* out, size_t out_cap, const pm_audio_header* h,
@@ -214,11 +252,62 @@ static inline pm_result pm_decode_audio(const uint8_t* buf, size_t len, pm_audio
     if (h->session_id == 0) return PM_ERR_BAD_FIELD;
     if (h->sample_rate < PM_MIN_SAMPLE_RATE || h->sample_rate > PM_MAX_SAMPLE_RATE)
         return PM_ERR_BAD_FIELD;
-    if (h->flags != 0) return PM_ERR_BAD_FIELD;
+    if (h->flags & ~PM_FLAG_ENCRYPTED) return PM_ERR_BAD_FIELD;
     if (h->codec != PM_CODEC_PCM16 && h->codec != PM_CODEC_OPUS) return PM_ERR_UNKNOWN_CODEC;
     if ((size_t)h->payload_len != len - PM_AUDIO_HEADER_LEN) return PM_ERR_LEN_MISMATCH;
     if (h->payload_len > PM_MAX_PAYLOAD) return PM_ERR_PAYLOAD_TOO_LARGE;
     *payload = buf + PM_AUDIO_HEADER_LEN;
+    return PM_OK;
+}
+
+/* ---- HELLO / ANNOUNCE (Wi-Fi discovery) ---------------------------------- */
+
+static inline int pm_encode_hello(uint8_t out[PM_HELLO_LEN], uint32_t nonce) {
+    pm_write_prefix(out, PM_KIND_HELLO);
+    pm_w32(out + 4, nonce);
+    pm_w32(out + 8, 0);
+    return PM_HELLO_LEN;
+}
+
+static inline pm_result pm_decode_hello(const uint8_t* buf, size_t len, uint32_t* nonce) {
+    uint8_t kind = 0;
+    pm_result r = pm_peek(buf, len, &kind);
+    if (r != PM_OK) return r;
+    if (kind != PM_KIND_HELLO) return PM_ERR_WRONG_KIND;
+    if (len != PM_HELLO_LEN) return PM_ERR_LEN_MISMATCH;
+    *nonce = pm_r32(buf + 4);
+    return PM_OK;
+}
+
+/* Returns bytes written or a negative pm_result. Names longer than PM_MAX_NAME
+ * bytes are truncated. */
+static inline int pm_encode_announce(uint8_t* out, size_t out_cap, const pm_announce* a) {
+    size_t n = strlen(a->name);
+    if (n > PM_MAX_NAME) n = PM_MAX_NAME;
+    if (out_cap < PM_ANNOUNCE_MIN_LEN + n) return PM_ERR_OUTPUT_TOO_SMALL;
+    pm_write_prefix(out, PM_KIND_ANNOUNCE);
+    pm_w32(out + 4, a->nonce);
+    pm_w16(out + 8, a->audio_port);
+    out[10] = a->flags;
+    out[11] = (uint8_t)n;
+    memcpy(out + 12, a->name, n);
+    return (int)(PM_ANNOUNCE_MIN_LEN + n);
+}
+
+static inline pm_result pm_decode_announce(const uint8_t* buf, size_t len, pm_announce* a) {
+    uint8_t kind = 0;
+    pm_result r = pm_peek(buf, len, &kind);
+    if (r != PM_OK) return r;
+    if (kind != PM_KIND_ANNOUNCE) return PM_ERR_WRONG_KIND;
+    if (len < PM_ANNOUNCE_MIN_LEN) return PM_ERR_TOO_SHORT;
+    a->nonce = pm_r32(buf + 4);
+    a->audio_port = pm_r16(buf + 8);
+    a->flags = buf[10];
+    a->name_len = buf[11];
+    if (a->name_len > PM_MAX_NAME) return PM_ERR_BAD_FIELD;
+    if (len != (size_t)PM_ANNOUNCE_MIN_LEN + a->name_len) return PM_ERR_LEN_MISMATCH;
+    memcpy(a->name, buf + 12, a->name_len);
+    a->name[a->name_len] = '\0';
     return PM_OK;
 }
 

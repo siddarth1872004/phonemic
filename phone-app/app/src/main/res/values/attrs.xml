@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The palette as theme attributes, so one layout serves every theme and accent. -->
+<resources>
+    <attr name="pmBg" format="color" />
+    <attr name="pmCard" format="color" />
+    <attr name="pmEdge" format="color" />
+    <attr name="pmControl" format="color" />
+    <attr name="pmControlHover" format="color" />
+    <attr name="pmAccent" format="color" />
+    <attr name="pmOnAccent" format="color" />
+    <attr name="pmGreen" format="color" />
+    <attr name="pmAmber" format="color" />
+    <attr name="pmRed" format="color" />
+    <attr name="pmText" format="color" />
+    <attr name="pmMuted" format="color" />
+</resources>

@@ -10,6 +10,7 @@
 #include <cstring>
 #include <random>
 
+#include <phonemic/crypto.h>
 #include <phonemic/wire.h>  // shared with the PC: the one packet format
 
 #include <opus.h>
@@ -23,7 +24,7 @@ namespace phonemic {
 namespace {
 
 constexpr int32_t kSampleRate = PM_SAMPLE_RATE;
-// Frames waiting for the Bluetooth writer. More than this (~200 ms) is pure
+// Frames waiting for the link writer. More than this (~200 ms) is pure
 // added latency, so the oldest are dropped instead.
 constexpr size_t kMaxQueued = 20;
 
@@ -61,13 +62,19 @@ int64_t AudioEngine::pc_age_ms() const {
     return static_cast<int64_t>(now_us() / 1000) - last;
 }
 
-int AudioEngine::start(bool voice_focus) {
+int AudioEngine::start(bool voice_focus, const std::string& pin) {
     stop();  // clean state
 
-    // A fresh random session per start: the PC uses it to tell restarts apart.
+    // A fresh random session per start: the PC uses it to tell restarts apart,
+    // and (with a PIN) it salts the key so nonces never repeat across sessions.
     session_ = random_session();
     seq_ = 0;
     samples_sent_ = 0;
+    encrypt_ = !pin.empty();
+    if (encrypt_ && pm_derive_key(pin.data(), pin.size(), session_, key_) != 0) {
+        LOGE("key derivation failed (out of memory)");
+        return kCryptoError;
+    }
     reset_link();
 
     voice_focus_ = voice_focus;
@@ -165,6 +172,7 @@ void AudioEngine::stop() {
         opus_ = nullptr;
     }
     opus_active_.store(false);
+    crypto_wipe(key_, sizeof key_);
     input_level_.store(0.0f);
     audio_session_.store(-1);
 }
@@ -260,11 +268,22 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
         body = encoded_.data();
         bytes = static_cast<size_t>(len);
     }
-    const int r = pm_encode_audio(packet_.data() + PM_FRAME_PREFIX_LEN, packet_.size() - PM_FRAME_PREFIX_LEN, &h,
-                                  body, bytes);
-    if (r < 0) return;
-    pm_write_frame_prefix(packet_.data(), static_cast<size_t>(r));
-    queue(packet_.data(), PM_FRAME_PREFIX_LEN + static_cast<size_t>(r));
+    uint8_t* const out = packet_.data() + PM_FRAME_PREFIX_LEN;
+    size_t total;
+    if (encrypt_) {
+        if (PM_AUDIO_HEADER_LEN + bytes + PM_TAG_LEN > PM_MAX_DATAGRAM) return;
+        h.flags = PM_FLAG_ENCRYPTED;
+        h.payload_len = static_cast<uint16_t>(bytes + PM_TAG_LEN);
+        pm_write_audio_header(out, &h);  // header first: it is the AAD
+        pm_seal(key_, out, PM_AUDIO_HEADER_LEN, session_, h.seq, h.timestamp_us, body, bytes, out + PM_AUDIO_HEADER_LEN);
+        total = PM_AUDIO_HEADER_LEN + h.payload_len;
+    } else {
+        const int r = pm_encode_audio(out, packet_.size() - PM_FRAME_PREFIX_LEN, &h, body, bytes);
+        if (r < 0) return;
+        total = static_cast<size_t>(r);
+    }
+    pm_write_frame_prefix(packet_.data(), total);
+    queue(packet_.data(), PM_FRAME_PREFIX_LEN + total);
 }
 
 void AudioEngine::queue(const uint8_t* packet, size_t len) {

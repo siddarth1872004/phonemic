@@ -6,8 +6,7 @@
 //
 //   phonemic-vmic-check --setup          use the app's own virtual-mic setup
 //                                        (Linux: creates the PulseAudio/PipeWire
-//                                        devices; Windows: feeds the PhoneMic
-//                                        driver)
+//                                        devices; Windows: plays into VB-CABLE)
 //   phonemic-vmic-check --setup --default
 //                                        also make PhoneMic the system's default
 //                                        microphone and record from *the default*
@@ -15,7 +14,7 @@
 //   phonemic-vmic-check [--play NAME] [--capture NAME] [--seconds 3] [--list]
 //
 // Names match exactly, else as a substring. CI runs it on Linux (PulseAudio and
-// PipeWire). On Windows, run it after installing the driver to check the whole
+// PipeWire). On Windows, run it after installing VB-CABLE to check the whole
 // path.
 #include <algorithm>
 #include <atomic>
@@ -32,9 +31,6 @@
 #include "phonemic/audio_out.hpp"  // icontains
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
-#ifdef _WIN32
-#include "driver_feed.hpp"
-#endif
 
 namespace {
 
@@ -122,7 +118,6 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "--default needs --setup\n");
         return 2;
     }
-    bool direct_feed = false;
     if (setup) {
         phonemic::EventLog log{20, true};
         const phonemic::VirtualMic vm = phonemic::setup_virtual_mic(&log);
@@ -133,10 +128,7 @@ int main(int argc, char** argv) {
         }
         play_match = vm.playback_match;
         cap_match = vm.mic_name;
-        direct_feed = vm.direct_feed;
-        std::printf("app setup: %s, apps record \"%s\"\n",
-                    direct_feed ? "feed the PhoneMic driver" : ("play into \"" + play_match + "\"").c_str(),
-                    cap_match.c_str());
+        std::printf("app setup: play into \"%s\", apps record \"%s\"\n", play_match.c_str(), cap_match.c_str());
         if (use_default) {
             std::string err;
             if (!phonemic::make_default_mic(vm, &err)) {
@@ -169,8 +161,8 @@ int main(int argc, char** argv) {
     }
 
     ma_device_id play_id{}, cap_id{};
-    std::string play_name = "the PhoneMic driver", cap_name = "the default microphone";
-    if ((!direct_feed && !find(play_list, play_n, play_match, &play_id, &play_name)) ||
+    std::string play_name, cap_name = "the default microphone";
+    if (!find(play_list, play_n, play_match, &play_id, &play_name) ||
         !find(cap_list, cap_n, cap_match, &cap_id, &cap_name)) {
         std::fprintf(stderr, "FAIL: no playback device \"%s\" + capture device \"%s\"\n", play_match.c_str(),
                      cap_match.c_str());
@@ -205,58 +197,22 @@ int main(int argc, char** argv) {
     cc.periodSizeInMilliseconds = 20;
 
     ma_device play, rec;
-    if (!direct_feed && ma_device_init(&ctx, &pc, &play) != MA_SUCCESS) {
+    if (ma_device_init(&ctx, &pc, &play) != MA_SUCCESS) {
         std::fprintf(stderr, "FAIL: could not open the playback side\n");
         return 1;
     }
     if (ma_device_init(&ctx, &cc, &rec) != MA_SUCCESS) {
         std::fprintf(stderr, "FAIL: could not open the capture side\n");
-        if (!direct_feed) ma_device_uninit(&play);
+        ma_device_uninit(&play);
         return 1;
     }
-#ifdef _WIN32
-    // Windows driver: write the tone into its ring through the same path the
-    // app uses (DriverFeed paces it with the driver's clock).
-    std::unique_ptr<phonemic::DriverFeed> feed;
-    std::atomic<bool> feeding{true};
-    std::thread feeder;
-    if (direct_feed) {
-        std::string err;
-        feed = phonemic::DriverFeed::open(&err);
-        if (!feed) {
-            std::fprintf(stderr, "FAIL: could not open the PhoneMic driver: %s\n", err.c_str());
-            ma_device_uninit(&rec);
-            return 1;
-        }
-        feeder = std::thread([&] {
-            std::vector<float> chunk(480);
-            auto next = std::chrono::steady_clock::now();
-            while (feeding.load()) {
-                ma_device fake{};
-                fake.pUserData = &tone;
-                play_cb(&fake, chunk.data(), nullptr, static_cast<ma_uint32>(chunk.size()));
-                feed->write(chunk.data(), chunk.size());
-                next += std::chrono::milliseconds(10);
-                std::this_thread::sleep_until(next);
-            }
-        });
-    }
-#endif
-    if (!direct_feed) ma_device_start(&play);
+    ma_device_start(&play);
     ma_device_start(&rec);
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(seconds * 1000)));
     ma_device_stop(&rec);
     ma_device_uninit(&rec);
-    if (!direct_feed) {
-        ma_device_stop(&play);
-        ma_device_uninit(&play);
-    }
-#ifdef _WIN32
-    if (feeder.joinable()) {
-        feeding = false;
-        feeder.join();
-    }
-#endif
+    ma_device_stop(&play);
+    ma_device_uninit(&play);
     ma_context_uninit(&ctx);
 
     const size_t got = cap.len.load(std::memory_order_acquire);

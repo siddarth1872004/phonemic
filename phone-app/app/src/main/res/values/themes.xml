@@ -1,31 +1,106 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Framework theme only: no AppCompat / Material Components in the APK. -->
+<!-- Framework themes only: no AppCompat / Material Components in the APK.
+     Same palettes as the desktop app (pc-app/gui/ui.cpp). MainActivity picks a
+     theme from the settings, then lays an Accent.* overlay on top. -->
 <resources>
+    <!-- OLED black: true #000 so an OLED panel keeps its pixels off. -->
     <style name="Theme.PhoneMic" parent="android:Theme.Material.NoActionBar">
-        <item name="android:colorBackground">@color/bg</item>
-        <item name="android:colorAccent">@color/accent</item>
-        <item name="android:colorControlActivated">@color/accent</item>
-        <item name="android:textColorPrimary">@color/text</item>
-        <item name="android:textColorSecondary">@color/muted</item>
-        <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="pmBg">#FF000000</item>
+        <item name="pmCard">#FF0B0B0E</item>
+        <item name="pmEdge">#FF1C1C22</item>
+        <item name="pmControl">#FF16161B</item>
+        <item name="pmControlHover">#FF22222A</item>
+        <item name="pmText">#FFF2F2F5</item>
+        <item name="pmMuted">#FF848490</item>
+        <item name="pmGreen">#FF3DDC84</item>
+        <item name="pmAmber">#FFF2A13B</item>
+        <item name="pmRed">#FFFF5C5C</item>
+        <item name="pmAccent">#FF7A8CFF</item>
+        <item name="pmOnAccent">#FF000000</item>
+        <item name="android:colorBackground">?attr/pmBg</item>
+        <item name="android:colorAccent">?attr/pmAccent</item>
+        <item name="android:colorControlActivated">?attr/pmAccent</item>
+        <item name="android:textColorPrimary">?attr/pmText</item>
+        <item name="android:textColorSecondary">?attr/pmMuted</item>
+        <item name="android:textColorHint">?attr/pmMuted</item>
+        <item name="android:windowBackground">?attr/pmBg</item>
+        <item name="android:statusBarColor">?attr/pmBg</item>
+        <item name="android:navigationBarColor">?attr/pmBg</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="android:alertDialogTheme">@style/Theme.PhoneMic.Dialog</item>
     </style>
 
-    <style name="Theme.PhoneMic.Dialog" parent="android:Theme.Material.Dialog.Alert">
-        <item name="android:colorBackground">@color/card</item>
-        <item name="android:colorAccent">@color/accent</item>
-        <item name="android:textColorPrimary">@color/text</item>
-        <item name="android:textColorSecondary">@color/muted</item>
+    <style name="Theme.PhoneMic.Dark">
+        <item name="pmBg">#FF141418</item>
+        <item name="pmCard">#FF1D1D23</item>
+        <item name="pmEdge">#FF2C2C35</item>
+        <item name="pmControl">#FF26262E</item>
+        <item name="pmControlHover">#FF31313B</item>
+        <item name="pmMuted">#FF9494A0</item>
     </style>
+
+    <style name="Theme.PhoneMic.Light" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="pmBg">#FFF4F4F7</item>
+        <item name="pmCard">#FFFFFFFF</item>
+        <item name="pmEdge">#FFE1E1E8</item>
+        <item name="pmControl">#FFECECF1</item>
+        <item name="pmControlHover">#FFE0E0E8</item>
+        <item name="pmText">#FF17171C</item>
+        <item name="pmMuted">#FF6A6A76</item>
+        <item name="pmGreen">#FF1F9D57</item>
+        <item name="pmAmber">#FFB86E00</item>
+        <item name="pmRed">#FFD63B3B</item>
+        <item name="pmAccent">#FF4757D6</item>
+        <item name="pmOnAccent">#FFFFFFFF</item>
+        <item name="android:colorBackground">?attr/pmBg</item>
+        <item name="android:colorAccent">?attr/pmAccent</item>
+        <item name="android:colorControlActivated">?attr/pmAccent</item>
+        <item name="android:textColorPrimary">?attr/pmText</item>
+        <item name="android:textColorSecondary">?attr/pmMuted</item>
+        <item name="android:textColorHint">?attr/pmMuted</item>
+        <item name="android:windowBackground">?attr/pmBg</item>
+        <item name="android:statusBarColor">?attr/pmBg</item>
+        <item name="android:navigationBarColor">?attr/pmBg</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:alertDialogTheme">@style/Theme.PhoneMic.Dialog.Light</item>
+    </style>
+
+    <style name="Theme.PhoneMic.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">?attr/pmCard</item>
+        <item name="android:colorAccent">?attr/pmAccent</item>
+        <item name="android:colorControlActivated">?attr/pmAccent</item>
+        <item name="android:textColorPrimary">?attr/pmText</item>
+        <item name="android:textColorSecondary">?attr/pmMuted</item>
+    </style>
+
+    <style name="Theme.PhoneMic.Dialog.Light" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorBackground">?attr/pmCard</item>
+        <item name="android:colorAccent">?attr/pmAccent</item>
+        <item name="android:colorControlActivated">?attr/pmAccent</item>
+        <item name="android:textColorPrimary">?attr/pmText</item>
+        <item name="android:textColorSecondary">?attr/pmMuted</item>
+    </style>
+
+    <!-- Accents: a bright shade for the dark themes, a deeper one that reads on white. -->
+    <style name="Accent" />
+    <style name="Accent.Periwinkle"><item name="pmAccent">#FF7A8CFF</item></style>
+    <style name="Accent.Teal"><item name="pmAccent">#FF2FD1C0</item></style>
+    <style name="Accent.Violet"><item name="pmAccent">#FFB48CFF</item></style>
+    <style name="Accent.Rose"><item name="pmAccent">#FFFF7AA8</item></style>
+    <style name="Accent.Amber"><item name="pmAccent">#FFFFB052</item></style>
+    <style name="Accent.Periwinkle.Light"><item name="pmAccent">#FF4757D6</item></style>
+    <style name="Accent.Teal.Light"><item name="pmAccent">#FF0B8F82</item></style>
+    <style name="Accent.Violet.Light"><item name="pmAccent">#FF7A4FD9</item></style>
+    <style name="Accent.Rose.Light"><item name="pmAccent">#FFD23F73</item></style>
+    <style name="Accent.Amber.Light"><item name="pmAccent">#FFC76A12</item></style>
 
     <style name="Label">
         <item name="android:layout_width">wrap_content</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:letterSpacing">0.12</item>
-        <item name="android:textColor">@color/muted</item>
+        <item name="android:textColor">?attr/pmMuted</item>
         <item name="android:textSize">11sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
@@ -46,5 +121,13 @@
         <item name="android:gravity">center</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- One segment of a segmented choice (link, theme); MainActivity tints it. -->
+    <style name="Segment" parent="Pill">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textSize">14sp</item>
     </style>
 </resources>

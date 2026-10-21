@@ -2,14 +2,14 @@
 <component type="desktop-application">
   <id>io.github.siddarth1872004.phonemic</id>
   <name>PhoneMic</name>
-  <summary>Use your phone as a Bluetooth microphone for your PC</summary>
+  <summary>Use your phone as a microphone for your PC</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT OR Apache-2.0</project_license>
   <description>
     <p>
       Speak into your phone and it shows up as a microphone ("PhoneMic Microphone")
       in Discord, Zoom, OBS, Teams or any other app. The phone connects over
-      Bluetooth with the system's own stack: pair once, no network and no extra drivers.
+      Bluetooth, Wi-Fi or a USB cable, with no extra drivers.
     </p>
     <ul>
       <li>Low latency, with drift compensation and packet-loss concealment</li>

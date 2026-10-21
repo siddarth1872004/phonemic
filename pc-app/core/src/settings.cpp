@@ -84,6 +84,11 @@ Settings Settings::load(const fs::path& file) {
         auto it = kv.find(k);
         return it == kv.end() ? nullptr : &it->second;
     };
+    if (auto v = get("port")) s.port = to_num<uint16_t>(*v, s.port, 1, 65535);
+    if (auto v = get("wifi_enabled")) s.wifi_enabled = to_bool(*v, s.wifi_enabled);
+    if (auto v = get("remember_passphrase")) s.remember_passphrase = to_bool(*v, s.remember_passphrase);
+    if (auto v = get("passphrase"); v && s.remember_passphrase) s.passphrase = *v;
+    if (auto v = get("usb_enabled")) s.usb_enabled = to_bool(*v, s.usb_enabled);
     if (auto v = get("voice_focus")) s.voice_focus = to_bool(*v, s.voice_focus);
     if (auto v = get("effect")) s.effect = to_num<int>(*v, s.effect, 0, 255);
     if (auto v = get("gain_db")) s.gain_db = to_num<float>(*v, s.gain_db, -40.0f, 24.0f);
@@ -92,12 +97,19 @@ Settings Settings::load(const fs::path& file) {
     if (auto v = get("mic_device")) s.mic_device = *v;
     if (auto v = get("monitor_device")) s.monitor_device = *v;
     if (auto v = get("latency_ms")) s.latency_ms = to_num<int>(*v, s.latency_ms, 10, 500);
+    if (auto v = get("theme")) s.theme = to_num<int>(*v, s.theme, 0, 2);
+    if (auto v = get("accent")) s.accent = to_num<int>(*v, s.accent, 0, 15);
     return s;
 }
 
 bool Settings::save(const fs::path& file) const {
     std::ostringstream o;
     o << "# PhoneMic settings — edited by the app; safe to delete.\n";
+    o << "port=" << port << "\n";
+    o << "wifi_enabled=" << (wifi_enabled ? 1 : 0) << "\n";
+    o << "remember_passphrase=" << (remember_passphrase ? 1 : 0) << "\n";
+    o << "passphrase=" << (remember_passphrase ? passphrase : std::string()) << "\n";
+    o << "usb_enabled=" << (usb_enabled ? 1 : 0) << "\n";
     o << "voice_focus=" << (voice_focus ? 1 : 0) << "\n";
     o << "effect=" << effect << "\n";
     o << "gain_db=" << gain_db << "\n";
@@ -106,6 +118,8 @@ bool Settings::save(const fs::path& file) const {
     o << "mic_device=" << mic_device << "\n";
     o << "monitor_device=" << monitor_device << "\n";
     o << "latency_ms=" << latency_ms << "\n";
+    o << "theme=" << theme << "\n";
+    o << "accent=" << accent << "\n";
 
     std::error_code ec;
     fs::create_directories(file.parent_path(), ec);

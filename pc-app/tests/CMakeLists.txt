@@ -7,7 +7,9 @@ add_executable(phonemic-tests
   test_playout.cpp
   test_denoise.cpp
   test_receiver.cpp
-  test_ipc.cpp
+  test_crypto.cpp
+  test_usb.cpp
+  test_wifi.cpp
   test_persistent_mic.cpp
   test_settings.cpp
   test_opus.cpp

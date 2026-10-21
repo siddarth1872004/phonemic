@@ -1,4 +1,4 @@
-// Protocol framing tests: packet layout, validation and RFCOMM frame prefixes.
+// Protocol framing tests: packet layout, validation, discovery and frame prefixes.
 #include <phonemic/wire.h>
 
 #include <cstring>
@@ -9,9 +9,10 @@
 namespace {
 const uint8_t kPayload[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
-pm_audio_header hdr(uint32_t seq = 42, uint64_t ts = 1234567890ull) {
+pm_audio_header hdr(uint32_t seq = 42, uint64_t ts = 1234567890ull, uint8_t flags = 0) {
     pm_audio_header h{};
     h.codec = PM_CODEC_PCM16;
+    h.flags = flags;
     h.session_id = 0xCAFEBABE;
     h.seq = seq;
     h.timestamp_us = ts;
@@ -56,6 +57,14 @@ TEST(wire_empty_payload_is_legal_framing) {
     const uint8_t* p = nullptr;
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_OK);
     CHECK_EQ(d.payload_len, 0);
+}
+
+TEST(wire_encrypted_flag_roundtrips) {
+    const auto b = encode(hdr(1, 2, PM_FLAG_ENCRYPTED), kPayload, 3);
+    pm_audio_header d{};
+    const uint8_t* p = nullptr;
+    CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_OK);
+    CHECK(d.flags & PM_FLAG_ENCRYPTED);
 }
 
 TEST(wire_magic_is_ascii_pm_and_layout_is_little_endian) {
@@ -105,7 +114,7 @@ TEST(wire_rejects_unknown_codec_and_flags) {
     b[4] = 5;
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_ERR_UNKNOWN_CODEC);
     b = encode(hdr(), kPayload, sizeof kPayload);
-    b[5] = 0x01;  // no flags are defined
+    b[5] = 0x02;  // only PM_FLAG_ENCRYPTED is defined
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_ERR_BAD_FIELD);
 }
 
@@ -157,6 +166,38 @@ TEST(wire_status_is_not_audio) {
     pm_audio_header d{};
     const uint8_t* p = nullptr;
     CHECK_EQ(pm_decode_audio(b, sizeof b, &d, &p), PM_ERR_WRONG_KIND);
+}
+
+TEST(wire_hello_roundtrip) {
+    uint8_t b[PM_HELLO_LEN];
+    CHECK_EQ(pm_encode_hello(b, 0xDEADBEEF), PM_HELLO_LEN);
+    uint32_t nonce = 0;
+    CHECK_EQ(pm_decode_hello(b, sizeof b, &nonce), PM_OK);
+    CHECK_EQ(nonce, 0xDEADBEEFu);
+    CHECK_EQ(pm_decode_hello(b, sizeof b - 1, &nonce), PM_ERR_LEN_MISMATCH);
+    pm_audio_header d{};
+    const uint8_t* p = nullptr;
+    CHECK_EQ(pm_decode_audio(b, sizeof b, &d, &p), PM_ERR_WRONG_KIND);
+}
+
+TEST(wire_announce_roundtrip_and_name_truncation) {
+    pm_announce a{};
+    a.nonce = 77;
+    a.audio_port = 4010;
+    a.flags = PM_ANNOUNCE_FLAG_PIN;
+    std::strcpy(a.name, "desk-pc");
+    uint8_t b[128];
+    const int n = pm_encode_announce(b, sizeof b, &a);
+    CHECK_EQ(n, PM_ANNOUNCE_MIN_LEN + 7);
+    pm_announce d{};
+    CHECK_EQ(pm_decode_announce(b, static_cast<size_t>(n), &d), PM_OK);
+    CHECK_EQ(d.nonce, 77u);
+    CHECK_EQ(d.audio_port, 4010);
+    CHECK_EQ(d.flags, PM_ANNOUNCE_FLAG_PIN);
+    CHECK(std::string(d.name) == "desk-pc");
+    // A lying name_len is rejected, never over-read.
+    b[11] = 50;
+    CHECK(pm_decode_announce(b, static_cast<size_t>(n), &d) != PM_OK);
 }
 
 TEST(wire_status_roundtrip) {

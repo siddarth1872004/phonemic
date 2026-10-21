@@ -195,3 +195,18 @@ TEST(process_runner_captures_output_and_reports_missing_programs) {
     const auto m = run_process({"definitely-not-a-program-phonemic"}, 2000);
     CHECK(!m.started);
 }
+
+#ifndef _WIN32
+// adb leaves a server running; if it inherited our sockets, the ports would
+// stay taken after PhoneMic exits.
+TEST(process_runner_children_inherit_only_stdio) {
+    int sv[2];
+    CHECK_EQ(::socketpair(AF_UNIX, SOCK_STREAM, 0, sv), 0);  // no close-on-exec
+    const std::string probe = "test -e /dev/fd/" + std::to_string(sv[0]) + " && echo leaked || echo clean";
+    const auto r = run_process({"sh", "-c", probe}, 10000);
+    CHECK(r.started);
+    CHECK(r.output.find("clean") != std::string::npos);
+    ::close(sv[0]);
+    ::close(sv[1]);
+}
+#endif

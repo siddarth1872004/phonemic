@@ -19,7 +19,6 @@ Binaries land in `build/bin/` (`build/bin/Release/` with Visual Studio):
 | `PhoneMic` / `PhoneMic.exe` | the desktop app |
 | `phonemic-receiver` | the same engine without a window (servers, scripting, `--measure`) |
 | `phonemic-vmic-check` | plays a tone into the virtual mic and checks it comes back (`--setup` uses the app's own detection; `--default` records the system default microphone) |
-| `phonemic-driver.exe` | Windows: creates the driver's device and installs it (used by `install-driver.ps1`) |
 | `phonemic-tests` | the test suite |
 
 ### Windows
@@ -90,7 +89,9 @@ The app has one library dependency, Oboe (the native audio input); its UI uses
 framework widgets only. The native engine (`phone-app/native`) compiles
 `shared/` directly, so the protocol is always identical to the desktop app's.
 
-## Windows driver
-See [pc-app/driver/README.md](../pc-app/driver/README.md). It needs the WDK (or
-the WDK NuGet package, as CI uses) and is not part of the CMake build;
-`phonemic-driver.exe` (its installer helper) is.
+## App icon
+`packaging/linux/phonemic.svg` is the master. `packaging/make-icons.sh`
+(needs `rsvg-convert` and Python 3) renders the PNG sizes and rebuilds
+`pc-app/gui/phonemic.ico`, which `phonemic.rc` embeds in the Windows exe. The
+Android launcher icon is vector drawables (`res/drawable/ic_launcher_*.xml`)
+drawn from the same shape.

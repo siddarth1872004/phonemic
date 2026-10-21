@@ -4,9 +4,9 @@ package com.phonemic
  * The entire JNI surface between Kotlin and the native audio engine.
  *
  * Principle #1 (the hot path is native): raw audio never crosses this
- * boundary. Capture (Oboe), Opus encoding and framing happen in C++; Kotlin
- * only moves the finished frames onto the Bluetooth socket (Android exposes
- * RFCOMM to Java alone) and hands the PC's replies back. Coarse telemetry
+ * boundary. Capture (Oboe), Opus encoding, PIN sealing and framing happen in
+ * C++; Kotlin only moves the finished frames onto the link's socket (Android
+ * exposes RFCOMM to Java alone) and hands the PC's replies back. Coarse telemetry
  * comes up for the UI.
  */
 object NativeBridge {
@@ -18,17 +18,24 @@ object NativeBridge {
     // start() results — keep in sync with AudioEngine::Result.
     const val OK = 0
     const val ERR_AUDIO = 3
+    const val ERR_CRYPTO = 4
 
     // PC feedback states — keep in sync with PM_STATUS_* in shared/include/phonemic/wire.h.
     const val PC_OK = 0
+    const val PC_PIN_REQUIRED = 1
+    const val PC_PIN_MISSING = 2
+    const val PC_PIN_WRONG = 3
     const val PC_BUSY = 4
     const val PC_UNSUPPORTED = 5
 
     /** Bytes [readOutgoing] needs room for: one whole frame (PM_FRAME_PREFIX_LEN + PM_MAX_DATAGRAM). */
     const val MAX_FRAME = 2 + 28 + 4096
 
-    /** Open the mic and start producing frames. Returns [OK] or [ERR_AUDIO]. */
-    external fun start(voiceFocus: Boolean): Int
+    /**
+     * Open the mic and start producing frames; a non-empty [pin] seals each one
+     * (Wi-Fi to a PC with a PIN). Returns [OK], [ERR_AUDIO] or [ERR_CRYPTO].
+     */
+    external fun start(voiceFocus: Boolean, pin: String): Int
 
     /** Stop and release the mic. Idempotent; a blocked [readOutgoing] returns -1. */
     external fun stop()
@@ -42,7 +49,7 @@ object NativeBridge {
     /** Bytes received from the PC (its framed STATUS replies), in any chunking. */
     external fun feedIncoming(buf: ByteArray, n: Int)
 
-    /** A new Bluetooth connection: drop the stale backlog and the PC's last report. */
+    /** A new connection: drop the stale backlog and the PC's last report. */
     external fun resetLink()
 
     external fun setMuted(muted: Boolean)

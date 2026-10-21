@@ -11,12 +11,27 @@ object StatusText {
         if (!StreamingService.running) {
             return when (StreamingService.lastError) {
                 NativeBridge.OK -> Status(R.string.status_idle, Tone.NEUTRAL)
+                NativeBridge.ERR_CRYPTO -> Status(R.string.err_crypto, Tone.BAD)
                 else -> Status(R.string.err_audio, Tone.BAD)
             }
         }
         when (StreamingService.link) {
-            StreamingService.Link.CONNECTING -> return Status(R.string.status_connecting, Tone.NEUTRAL)
-            StreamingService.Link.UNREACHABLE -> return Status(R.string.status_unreachable, Tone.WARN)
+            StreamingService.Link.CONNECTING -> return Status(
+                when (StreamingService.via) {
+                    StreamingService.Transport.BLUETOOTH -> R.string.status_connecting
+                    StreamingService.Transport.WIFI -> R.string.status_connecting_wifi
+                    StreamingService.Transport.USB -> R.string.status_connecting_usb
+                },
+                Tone.NEUTRAL,
+            )
+            StreamingService.Link.UNREACHABLE -> return Status(
+                when (StreamingService.via) {
+                    StreamingService.Transport.BLUETOOTH -> R.string.status_unreachable
+                    StreamingService.Transport.WIFI -> R.string.status_unreachable_wifi
+                    StreamingService.Transport.USB -> R.string.status_unreachable_usb
+                },
+                Tone.WARN,
+            )
             StreamingService.Link.CONNECTED -> Unit
         }
         val age = NativeBridge.pcAgeMs()
@@ -24,6 +39,8 @@ object StatusText {
             return when (NativeBridge.pcState()) {
                 NativeBridge.PC_OK -> Status(R.string.status_connected, Tone.GOOD)
                 NativeBridge.PC_BUSY -> Status(R.string.status_busy, Tone.WARN)
+                NativeBridge.PC_PIN_REQUIRED, NativeBridge.PC_PIN_WRONG -> Status(R.string.status_pin_wrong, Tone.BAD)
+                NativeBridge.PC_PIN_MISSING -> Status(R.string.status_pin_missing, Tone.BAD)
                 else -> Status(R.string.status_unsupported, Tone.BAD)
             }
         }

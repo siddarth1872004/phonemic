@@ -1,12 +1,18 @@
 // The receive pipeline: packets from the phone in -> clean audio out.
 //
-//   packet ─► decode (shared wire.h) ─► sender lock ─► jitter buffer (reorder,
+//   packet ─► decode (shared wire.h) ─► sender lock / PIN ─► decrypt ─► jitter
+//          ─► buffer (reorder,
 //          ─► loss detection) ─► Opus decode / PCM16 → float ─► resample to
 //          ─► 48 kHz ─► loss concealment ─► Voice Focus (RNNoise) ─► voice
 //          ─► changer ─► gain + limiter ─► mute ─► mic sink (+ monitor)
 //
-// Transport-agnostic: the Bluetooth link (bluetooth.hpp) feeds packets through
-// submit() and sends the STATUS feedback make_status() builds back to the phone.
+// Transport-agnostic: Bluetooth (bluetooth.hpp), USB (usb.hpp) and Wi-Fi
+// (wifi.hpp) feed packets through submit() and send the STATUS feedback
+// make_status() builds back to the phone.
+//
+// A PIN set on the PC means Wi-Fi audio must be sealed with it (crypto.h):
+// otherwise anyone on the network could talk into your microphone. Bluetooth
+// (paired, radio-encrypted) and USB (the cable, through adb) are trusted.
 //
 // One sender at a time: the first phone owns the mic until it disconnects or has
 // been silent for kSessionTimeoutMs; anyone else gets STATUS busy.
@@ -14,6 +20,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -39,14 +46,19 @@ public:
     virtual uint32_t buffered_ms() const { return 0; }
 };
 
-// Identifies a sender: one Bluetooth connection and the stream session on it.
+// Identifies a sender: one connection (a Bluetooth or USB stream, or a Wi-Fi
+// address) and the stream session on it.
 struct SourceId {
-    uint64_t conn_id = 0;      // transport connection id
+    enum class Via : uint8_t { Bluetooth, Usb, Wifi };
+    Via via = Via::Bluetooth;
+    uint64_t conn_id = 0;      // transport connection id (Receiver::new_conn_id)
     uint32_t session = 0;      // from the packet
-    std::string name;          // the phone's Bluetooth name
+    std::string name;          // the phone's Bluetooth name, or its Wi-Fi address
     bool same_sender(const SourceId& o) const { return conn_id == o.conn_id && session == o.session; }
-    std::string describe() const { return name.empty() ? std::string("phone") : name; }
+    std::string describe() const;
 };
+
+const char* via_name(SourceId::Via v);  // "Bluetooth", "USB", "Wi-Fi"
 
 class Receiver {
 public:
@@ -68,6 +80,14 @@ public:
     void set_gain_db(float db) { gain_db_.store(db); }
     void set_mute(bool m) { mute_.store(m); }
     void set_monitor(bool m) { monitor_.store(m); }
+    // Wi-Fi PIN / passphrase; empty = Wi-Fi audio may be plaintext.
+    void set_passphrase(const std::string& p);
+    bool has_passphrase() const;
+
+    // A connection id no other transport uses.
+    static uint64_t new_conn_id();
+    // True while a sender owns the mic (for discovery's "busy" flag).
+    bool busy() const;
 
     // Feed one packet (thread-safe). Returns a PM_STATUS_* code describing what
     // happened, for the transport to report back to the phone.
@@ -80,6 +100,8 @@ public:
     struct Snapshot {
         bool connected = false;      // packets from the active sender within 1.5 s
         std::string peer;            // active sender
+        SourceId::Via via = SourceId::Via::Bluetooth;
+        bool encrypted = false;      // the active sender seals its audio with the PIN
         uint32_t session_received = 0, session_lost = 0;
         uint32_t sample_rate = 0;
         bool opus = false;           // the sender compresses with Opus
@@ -102,6 +124,7 @@ private:
     void begin_session(const SourceId& src, const pm_audio_header& h, uint64_t now);
     void play_frame(const float* in48k, size_t n);
     void conceal_frame();
+    bool key_for(uint32_t session, const std::string& pass, uint8_t out[32], uint64_t now);
 
     EventLog* log_;
 
@@ -109,6 +132,8 @@ private:
     std::atomic<bool> voice_focus_{true}, mute_{false}, monitor_{false};
     std::atomic<uint8_t> effect_{0};
     std::atomic<float> gain_db_{0.0f};
+    mutable std::mutex settings_mu_;
+    std::string passphrase_;
 
     // Pipeline state — guarded by pipe_mu_ (one thread per connection submits).
     mutable std::mutex pipe_mu_;
@@ -119,6 +144,15 @@ private:
     uint64_t active_last_ms_ = 0;
     uint32_t active_rate_ = PM_SAMPLE_RATE;
     uint8_t active_codec_ = PM_CODEC_PCM16;
+    bool active_encrypted_ = false;
+    struct KeyEntry {
+        uint8_t key[32];
+        uint64_t used_ms;
+    };
+    std::map<uint32_t, KeyEntry> keys_;  // session id -> derived key
+    std::string keys_pass_;              // passphrase the cache was built for
+    std::vector<uint64_t> kdf_times_;    // rate limit for key derivations
+    std::vector<uint8_t> plain_;
     OpusVoiceDecoder opus_;
     JitterBuffer jitter_{64, 0};
     Resampler resampler_;

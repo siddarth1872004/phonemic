@@ -2,7 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- The link to the PC is a Bluetooth RFCOMM socket to a paired device:
+    <!-- Wi-Fi (UDP + discovery) and USB (TCP to adb reverse on 127.0.0.1). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- The low-latency Wi-Fi lock held while streaming over Wi-Fi. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Bluetooth is an RFCOMM socket to a paired device:
          Android 12+ asks for "Nearby devices" (CONNECT only, no scanning). -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission
@@ -14,7 +19,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
-    <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -36,7 +42,7 @@
         </activity>
 
         <!-- Streaming runs in a foreground service so capture survives the app
-             going to the background. The native engine and the Bluetooth link
+             going to the background. The native engine and the link to the PC
              live inside it. -->
         <service
             android:name=".StreamingService"

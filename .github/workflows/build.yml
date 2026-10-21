@@ -204,14 +204,6 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Check the driver scripts parse
-        shell: pwsh
-        run: |
-          foreach ($f in 'pc-app/driver/install-driver.ps1', 'pc-app/driver/uninstall-driver.ps1') {
-            $t = $null; $e = $null
-            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$t, [ref]$e)
-            if ($e.Count) { $e | ForEach-Object { Write-Error "$f $_" }; exit 1 }
-          }
       - uses: actions/upload-artifact@v4
         with:
           name: PhoneMic-windows-bin
@@ -219,118 +211,20 @@ jobs:
             build/bin/Release/PhoneMic.exe
             build/bin/Release/phonemic-receiver.exe
             build/bin/Release/phonemic-vmic-check.exe
-            build/bin/Release/phonemic-driver.exe
-
-  driver:
-    name: Windows driver (WDK)
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@v4
-      - uses: microsoft/setup-msbuild@v2
-      - name: Fetch ACX headers + import library (the runner's WDK lacks them)
-        shell: pwsh
-        run: nuget install Microsoft.Windows.WDK.x64 -Version 10.0.26100.6584 -OutputDirectory "$env:RUNNER_TEMP\nuget" -NonInteractive
-      - name: Build phonemic.sys
-        shell: pwsh
-        run: >
-          msbuild pc-app/driver/phonemic.vcxproj /p:Configuration=Release /p:Platform=x64 /p:SignMode=Off
-          /p:PhonemicSkipInf=true /m /v:minimal
-          "/p:PhonemicAcxRoot=$env:RUNNER_TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c"
-      - name: Validate the INF (Microsoft's InfVerif, as used for driver signing)
-        shell: pwsh
-        run: |
-          $iv = "$env:RUNNER_TEMP\nuget\Microsoft.Windows.WDK.x64.10.0.26100.6584\c\tools\10.0.26100.0\x64\infverif.exe"
-          & $iv /w /v pc-app/driver/phonemic.inf
-          if ($LASTEXITCODE -ne 0) { Write-Error "InfVerif /w failed"; exit 1 }
-      - name: Submission package for Microsoft attestation signing (phonemic.cab, unsigned)
-        # Sign it with your EV certificate and upload it in Partner Center
-        # (docs/SIGNING.md); Microsoft returns the signed driver.
-        shell: pwsh
-        run: |
-          $src = 'submission'
-          New-Item -ItemType Directory -Force $src | Out-Null
-          Copy-Item pc-app/driver/phonemic.inf, pc-app/driver/x64/Release/phonemic.sys, pc-app/driver/x64/Release/phonemic.pdb $src
-          @(
-            '.OPTION EXPLICIT'
-            '.Set CabinetFileCountThreshold=0'
-            '.Set FolderFileCountThreshold=0'
-            '.Set FolderSizeThreshold=0'
-            '.Set MaxCabinetSize=0'
-            '.Set MaxDiskFileCount=0'
-            '.Set MaxDiskSize=0'
-            '.Set CompressionType=MSZIP'
-            '.Set Cabinet=on'
-            '.Set Compress=on'
-            '.Set DiskDirectoryTemplate=submission-out'
-            '.Set CabinetNameTemplate=phonemic.cab'
-            '.Set DestinationDir=phonemic'
-            "$src\phonemic.inf"
-            "$src\phonemic.sys"
-            "$src\phonemic.pdb"
-          ) | Set-Content -Encoding ascii phonemic.ddf
-          makecab /f phonemic.ddf
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path submission-out/phonemic.cab)) { Write-Error 'makecab failed'; exit 1 }
-          Get-ChildItem submission-out
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PhoneMic-driver-submission
-          path: submission-out/phonemic.cab
-      - name: Package the driver for the app
-        # Microsoft-signed files in pc-app/driver/signed/ (returned by attestation
-        # signing) are used when they match this INF's DriverVer: they install
-        # without test mode. Otherwise the package is unsigned and
-        # install-driver.ps1 test-signs it on the user's PC.
-        shell: pwsh
-        run: |
-          $pkg = 'driver-package'
-          New-Item -ItemType Directory -Force $pkg | Out-Null
-          Copy-Item pc-app/driver/install-driver.ps1, pc-app/driver/uninstall-driver.ps1 $pkg
-          $ver = (Select-String -Path pc-app/driver/phonemic.inf -Pattern '^DriverVer\s*=\s*(.+)$').Matches[0].Groups[1].Value.Trim()
-          $signed = 'pc-app/driver/signed'
-          $useSigned = $false
-          if (Test-Path "$signed/phonemic.cat") {
-            $sig = Get-AuthenticodeSignature "$signed/phonemic.cat"
-            $sver = (Select-String -Path "$signed/phonemic.inf" -Pattern '^DriverVer\s*=\s*(.+)$').Matches[0].Groups[1].Value.Trim()
-            Write-Host "signed package: $($sig.Status), signer $($sig.SignerCertificate.Subject), DriverVer $sver (source $ver)"
-            if ($sig.Status -eq 'Valid' -and $sig.SignerCertificate.Subject -match 'Microsoft' -and $sver -eq $ver) {
-              $useSigned = $true
-            } else {
-              Write-Warning "pc-app/driver/signed doesn't match this source (DriverVer $ver) or isn't Microsoft-signed: shipping the unsigned driver."
-            }
-          }
-          if ($useSigned) {
-            Copy-Item "$signed/phonemic.sys", "$signed/phonemic.inf", "$signed/phonemic.cat" $pkg
-            Write-Host 'Shipping the Microsoft-signed driver (no test mode needed).'
-          } else {
-            Copy-Item pc-app/driver/x64/Release/phonemic.sys, pc-app/driver/phonemic.inf $pkg
-            $inf2cat = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x86\Inf2Cat.exe" | Sort-Object FullName -Descending | Select-Object -First 1
-            if (-not $inf2cat) { Write-Error 'Inf2Cat not found'; exit 1 }
-            & $inf2cat.FullName "/driver:$((Resolve-Path $pkg).Path)" /os:10_NI_X64 /uselocaltime
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$pkg/phonemic.cat")) { Write-Error 'Inf2Cat failed'; exit 1 }
-          }
-          Get-ChildItem $pkg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PhoneMic-driver-package
-          path: driver-package/
 
   windows-package:
-    name: Windows package (app + PhoneMic driver)
-    needs: [windows, driver]
+    name: Windows package
+    needs: [windows]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: PhoneMic-windows-bin
           path: bin
-      - uses: actions/download-artifact@v4
-        with:
-          name: PhoneMic-driver-package
-          path: dist/driver
       - name: Assemble PhoneMic-windows-x64.zip
         run: |
+          mkdir -p dist
           cp bin/PhoneMic.exe bin/phonemic-receiver.exe bin/phonemic-vmic-check.exe dist/
-          cp bin/phonemic-driver.exe dist/driver/
           (cd dist && zip -r ../PhoneMic-windows-x64.zip .)
           cp bin/PhoneMic.exe PhoneMic.exe
           unzip -l PhoneMic-windows-x64.zip

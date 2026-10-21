@@ -1,9 +1,12 @@
 // Turning the received audio into a microphone other apps can select.
-// PhoneMic uses only its own virtual microphone, "PhoneMic Microphone"; no
-// third-party virtual-cable driver is used or supported:
+// PhoneMic installs no driver of its own:
 //
-//   Windows — the PhoneMic ACX driver (pc-app/driver, Windows 11 22H2+): we
-//             write into the shared ring it creates.
+//   Windows — VB-CABLE, a free, signed virtual audio cable (vb-audio.com),
+//             installed from the app. PhoneMic plays into its playback side
+//             ("CABLE Input") and apps record its other side ("CABLE Output").
+//             The app can rename the two endpoints "PhoneMic Feed" and
+//             "PhoneMic Microphone", and keeps the cable from becoming the
+//             default speaker (which would send every PC sound into the mic).
 //   Linux   — PulseAudio/PipeWire's own modules: a null sink "PhoneMic" plus a
 //             remapped source "PhoneMic Microphone", created through libpulse
 //             (optionally kept registered when PhoneMic is closed).
@@ -18,16 +21,14 @@ namespace phonemic {
 
 struct VirtualMic {
     bool ready = false;
-    // Windows driver: audio goes straight into the driver's ring (DriverFeed),
-    // not through a playback device.
-    bool direct_feed = false;
-    std::string via;             // "PhoneMic driver", "PipeWire", "PulseAudio", ...
+    std::string via;             // "VB-CABLE", "PipeWire", "PulseAudio", ...
     std::string playback_match;  // output device to route the mic audio into
     std::string mic_name;        // what the user picks in Discord / Zoom / OBS
     std::string help;            // what to do when not ready
-    // PhoneMic's own driver package found next to the app ("" = none), for the
-    // Install button.
-    std::string driver_package;
+    // Windows: VB-CABLE can be installed from the app (it isn't yet), and its
+    // endpoints still carry their stock names (so they can be renamed).
+    bool can_install = false;
+    bool can_rename = false;
     // Linux: the mic can be kept registered with the sound server when PhoneMic
     // is closed (persistent), and whether it currently is.
     bool can_persist = false;
@@ -59,9 +60,26 @@ enum class DefaultMicState { Unknown, Yes, No };
 DefaultMicState default_mic_state(const VirtualMic& vm);
 bool make_default_mic(const VirtualMic& vm, std::string* err);
 
-// Install PhoneMic's own driver from `vm.driver_package` (Windows: runs
-// install-driver.ps1 elevated, in a console that explains each step). Runs on a
+#ifdef _WIN32
+// Download VB-CABLE from vb-audio.com, check the installer's Authenticode
+// signature (valid, issued to VB-Audio), and launch it elevated. Runs on a
 // background thread; `done` gets the outcome. Re-run setup_virtual_mic after.
-void install_driver_async(const VirtualMic& vm, std::function<void(bool ok, std::string message)> done);
+void install_vbcable_async(std::function<void(bool ok, std::string message)> done);
+
+struct CableEndpoints {
+    std::string feed_name;        // playback side, e.g. "CABLE Input (VB-Audio Virtual Cable)"
+    std::string mic_name;         // recording side, e.g. "CABLE Output (VB-Audio Virtual Cable)"
+    bool named_phonemic = false;  // already renamed to PhoneMic Feed / PhoneMic Microphone
+    bool default_output = false;  // the cable is the default speaker (bad: PC sound leaks into the mic)
+};
+bool find_cable(CableEndpoints* out);
+// Move the default speaker off the cable onto a real device. true = changed.
+bool fix_cable_default_output(std::string* now_default);
+// Rename the cable's endpoints to PhoneMic's names (or back to VB-CABLE's).
+// The async form relaunches this program elevated with `--rename-cable` /
+// `--restore-cable`, whose handler calls rename_cable_now (0 = done).
+void rename_cable_async(bool to_phonemic, std::function<void(bool ok, std::string message)> done);
+int rename_cable_now(bool to_phonemic);
+#endif
 
 }  // namespace phonemic

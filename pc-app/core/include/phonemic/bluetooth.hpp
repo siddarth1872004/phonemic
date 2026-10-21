@@ -82,7 +82,6 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<State> state_{State::Starting};
     std::atomic<int> active_{0};
-    std::atomic<uint64_t> next_id_{1};
     mutable std::mutex mu_;
     std::string adapter_name_, detail_;
     std::vector<ByteStream*> streams_;  // open connections, closed by stop()
