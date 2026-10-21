@@ -4,11 +4,8 @@
 #   miniaudio  — audio output on WASAPI / PulseAudio / ALSA / CoreAudio, with
 #                built-in sample-rate + channel conversion (single header).
 #   imgui+glfw — the native desktop window (no web view, no Electron).
-#   opus       — optional compression + loss concealment on the wire.
+#   opus       — compression + loss concealment over the Bluetooth link.
 #   rnnoise    — Voice Focus noise removal (the 2018 model, bundled weights).
-#   qrcodegen  — QR code for the browser-mic link.
-#   mbedtls    — TLS for the browser-mic server (browsers require HTTPS for the
-#                microphone); self-contained, no OpenSSL install needed.
 include(FetchContent)
 set(FETCHCONTENT_QUIET ON)
 
@@ -91,25 +88,6 @@ if(PHONEMIC_WITH_RNNOISE)
     target_link_libraries(rnnoise PRIVATE m)
   endif()
   set_target_properties(rnnoise PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endif()
-
-# ---- mbedtls -------------------------------------------------------------------
-if(PHONEMIC_WITH_WEB)
-  set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
-  set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-  set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
-  set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
-  set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
-  set(GEN_FILES OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(mbedtls
-    GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git
-    GIT_TAG        v3.6.4
-    GIT_SHALLOW    TRUE)
-  FetchContent_MakeAvailable(mbedtls)
-
-  phonemic_fetch(qrcodegen https://github.com/nayuki/QR-Code-generator.git v1.8.0)
-  add_library(qrcodegen STATIC ${qrcodegen_SOURCE_DIR}/cpp/qrcodegen.cpp)
-  target_include_directories(qrcodegen SYSTEM PUBLIC ${qrcodegen_SOURCE_DIR}/cpp)
 endif()
 
 # ---- GUI: GLFW + Dear ImGui ---------------------------------------------------

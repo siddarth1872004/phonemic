@@ -3,18 +3,21 @@
 // Oboe captures the mic on a realtime thread; onAudioReady() only copies the
 // samples into a lock-free ring and wakes the sender thread (no syscalls, no
 // locks, no allocation on the audio thread). The sender thread cuts fixed 10 ms
-// frames, frames them with the shared wire.h, optionally encrypts them, sends
-// them over UDP, and reads the PC's STATUS feedback.
+// frames, Opus-encodes them, frames them with the shared wire.h ([u16 len]
+// [packet]) and queues them. Android exposes RFCOMM sockets to Java only, so
+// Kotlin drains that queue (take_outgoing) onto the Bluetooth socket and feeds
+// the PC's STATUS replies back (feed_incoming).
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
 #include <memory>
-#include <string>
+#include <mutex>
 #include <thread>
 #include <vector>
 
-#include <netinet/in.h>
 #include <semaphore.h>
 
 #include <oboe/Oboe.h>
@@ -26,21 +29,26 @@ namespace phonemic {
 class AudioEngine : public oboe::AudioStreamDataCallback, public oboe::AudioStreamErrorCallback {
 public:
     // start() results (mirrored in NativeBridge.kt).
-    enum Result { kOk = 0, kBadAddress = 1, kSocketError = 2, kAudioError = 3, kCryptoError = 4 };
+    enum Result { kOk = 0, kAudioError = 3 };
 
     AudioEngine();
     ~AudioEngine() override;
 
-    // Open the mic and stream to pc_ip:pc_port. A non-empty `pin` encrypts
-    // every packet. `voice_focus` picks the platform's voice-processing input
-    // (noise suppression / echo cancellation) vs. a minimally processed one.
-    // `opus` compresses each 10 ms frame (~48 kbps instead of 768 kbps PCM).
-    // `usb` streams over TCP to 127.0.0.1:pc_port, which `adb reverse` (set up by
-    // the PC app) forwards to the PC; pc_ip is ignored then.
-    int start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus,
-              bool opus, bool usb);
+    // Open the mic and start producing frames. `voice_focus` picks the
+    // platform's voice-processing input (noise suppression / echo cancellation)
+    // vs. a minimally processed one.
+    int start(bool voice_focus);
     void stop();  // idempotent
     void set_muted(bool m) { muted_.store(m, std::memory_order_relaxed); }
+
+    // ---- Bluetooth link (called from Kotlin's socket threads) ----
+    // Copy whole queued frames into buf (waits up to timeout_ms for the first).
+    // Returns bytes copied, 0 on timeout, -1 once stopped.
+    int take_outgoing(uint8_t* buf, size_t cap, int timeout_ms);
+    // Bytes the PC sent (framed STATUS packets), in any chunking.
+    void feed_incoming(const uint8_t* data, size_t len);
+    // A new connection: drop the stale backlog and any half-received frame.
+    void reset_link();
 
     // ---- telemetry for the UI (all lock-free) ----
     bool running() const { return running_.load(); }
@@ -56,7 +64,6 @@ public:
     int32_t pc_buffer_ms() const { return pc_buffer_ms_.load(std::memory_order_relaxed); }
     int64_t pc_received() const { return pc_received_.load(std::memory_order_relaxed); }
     int64_t pc_lost() const { return pc_lost_.load(std::memory_order_relaxed); }
-    int32_t last_send_errno() const { return last_errno_.load(std::memory_order_relaxed); }
 
     // oboe callbacks
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream, void* audio_data,
@@ -68,13 +75,8 @@ private:
     void close_stream();
     void sender_loop();
     void send_frame(const int16_t* pcm, size_t n);
-    void poll_status();
     void handle_status(const uint8_t* data, size_t len);
-    void transmit(const uint8_t* packet, size_t len);
-    // USB (TCP) transport.
-    void usb_connect();
-    void usb_disconnect(int err);
-    void usb_flush();
+    void queue(const uint8_t* packet, size_t len);
 
     // ---- capture -> sender ring (single producer / single consumer) ----
     static constexpr size_t kRingSize = 1 << 15;  // samples (~680 ms @ 48 kHz)
@@ -87,18 +89,17 @@ private:
     std::thread sender_;
     std::atomic<bool> running_{false}, need_reopen_{false}, muted_{false};
     bool voice_focus_ = true;
-    bool want_opus_ = false;
     OpusEncoder* opus_ = nullptr;          // used only on the sender thread
     std::atomic<bool> opus_active_{false};
     std::vector<uint8_t> encoded_;
 
-    int socket_fd_ = -1;
-    bool usb_ = false;
-    uint64_t next_connect_ms_ = 0;
-    std::vector<uint8_t> tcp_out_, tcp_in_;  // length-prefixed frames
-    sockaddr_in dest_{};
-    bool encrypt_ = false;
-    uint8_t key_[32] = {0};
+    // ---- sender -> Bluetooth writer (framed packets) ----
+    std::mutex out_mu_;
+    std::condition_variable out_cv_;
+    std::deque<std::vector<uint8_t>> out_;
+    std::mutex in_mu_;
+    std::vector<uint8_t> in_;  // STATUS bytes not yet a whole frame
+
     uint32_t session_ = 0;
     uint32_t seq_ = 0;
     uint64_t start_us_ = 0, samples_sent_ = 0;
@@ -108,7 +109,7 @@ private:
     std::atomic<int64_t> packets_sent_{0};
     std::atomic<float> input_level_{0.0f};
     std::atomic<int32_t> audio_session_{-1}, sample_rate_{48000}, stream_gen_{0};
-    std::atomic<int32_t> pc_state_{-1}, pc_buffer_ms_{0}, last_errno_{0};
+    std::atomic<int32_t> pc_state_{-1}, pc_buffer_ms_{0};
     std::atomic<int64_t> pc_last_ms_{0}, pc_received_{0}, pc_lost_{0};
 };
 

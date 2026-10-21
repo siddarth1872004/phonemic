@@ -18,7 +18,6 @@ Binaries land in `build/bin/` (`build/bin/Release/` with Visual Studio):
 |---|---|
 | `PhoneMic` / `PhoneMic.exe` | the desktop app |
 | `phonemic-receiver` | the same engine without a window (servers, scripting, `--measure`) |
-| `phonemic-softphone` | emulates the phone: tone, PIN, loss/reorder simulation, discovery |
 | `phonemic-vmic-check` | plays a tone into the virtual mic and checks it comes back (`--setup` uses the app's own detection; `--default` records the system default microphone) |
 | `phonemic-driver.exe` | Windows: creates the driver's device and installs it (used by `install-driver.ps1`) |
 | `PhoneMic.driver` | macOS: the virtual-mic plug-in (also copied into `PhoneMic.app`) |
@@ -41,7 +40,9 @@ sudo apt install build-essential cmake git libx11-dev libxrandr-dev libxinerama-
 # Arch:    sudo pacman -S base-devel cmake git libx11 libxrandr libxinerama libxcursor libxi mesa
 ```
 At run time the app talks to PipeWire or PulseAudio through libpulse, loaded on
-demand (no build-time dependency), and falls back to ALSA. The default build
+demand (no build-time dependency), and falls back to ALSA. Bluetooth goes
+through BlueZ over D-Bus, with libdbus also loaded on demand, so there is no
+Bluetooth build dependency either. The default build
 uses X11 (XWayland on Wayland desktops); `-DPHONEMIC_WAYLAND=ON` adds a native
 Wayland window (needs `wayland-scanner`, libwayland and libxkbcommon headers).
 
@@ -58,7 +59,8 @@ packaging/linux/build-appimage.sh "$PWD/stage" ./appimagetool     # AppImage (ne
 (Alpine, musl) build from source.
 
 ### macOS
-Xcode command-line tools + CMake. The build also produces `PhoneMic.driver`
+Xcode command-line tools + CMake. Bluetooth uses the system IOBluetooth
+framework. The build also produces `PhoneMic.driver`
 (the virtual microphone) and bundles it into `PhoneMic.app`. For a universal
 build add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 
@@ -67,10 +69,9 @@ build add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 | Option | Default | |
 |---|---|---|
 | `PHONEMIC_BUILD_GUI` | ON | the window (needs X11/GL headers on Linux) |
-| `PHONEMIC_BUILD_TOOLS` | ON | receiver + softphone |
+| `PHONEMIC_BUILD_TOOLS` | ON | receiver + vmic-check |
 | `PHONEMIC_BUILD_TESTS` | ON | test suite |
 | `PHONEMIC_WITH_RNNOISE` | ON | Voice Focus noise removal |
-| `PHONEMIC_WITH_WEB` | ON | built-in browser mic (mbedTLS, QR code) |
 | `PHONEMIC_WAYLAND` | OFF | Linux: native Wayland window as well as X11 |
 | `PHONEMIC_PORTABLE` | OFF | Linux: static libstdc++/libgcc (one binary for every distro) |
 
@@ -92,8 +93,9 @@ Requirements: **Android Studio** (it bundles JDK 17), and in its SDK Manager
   Release builds are minified and, unless you add your own signing config, signed
   with the debug key so they install directly.
 
-The native engine (`phone-app/native`) compiles `shared/` directly, so protocol
-and crypto are always identical to the desktop app's.
+The app has one library dependency, Oboe (the native audio input); its UI uses
+framework widgets only. The native engine (`phone-app/native`) compiles
+`shared/` directly, so the protocol is always identical to the desktop app's.
 
 ## Windows driver
 See [pc-app/driver/README.md](../pc-app/driver/README.md). It needs the WDK (or

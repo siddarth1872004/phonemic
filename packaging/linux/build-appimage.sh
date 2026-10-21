@@ -23,7 +23,7 @@ cat > "$appdir/AppRun" <<'RUN'
 # run the command-line tools.
 here=$(dirname "$(readlink -f "$0")")
 case "${1:-}" in
-    receiver|softphone|vmic-check) tool=$1; shift; exec "$here/usr/bin/phonemic-$tool" "$@" ;;
+    receiver|vmic-check) tool=$1; shift; exec "$here/usr/bin/phonemic-$tool" "$@" ;;
 esac
 exec "$here/usr/bin/phonemic" "$@"
 RUN

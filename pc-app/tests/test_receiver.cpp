@@ -1,7 +1,6 @@
 // End-to-end tests of the receive pipeline: packets in -> processed audio out.
 #include "phonemic/receiver.hpp"
 
-#include <phonemic/crypto.h>
 #include <phonemic/wire.h>
 
 #include <chrono>
@@ -23,7 +22,7 @@ struct CollectSink : AudioSinkIface {
 };
 
 std::vector<uint8_t> audio_packet(uint32_t session, uint32_t seq, const std::vector<int16_t>& pcm,
-                                  uint32_t rate = 48000, const std::string& pass = "") {
+                                  uint32_t rate = 48000) {
     pm_audio_header h{};
     h.codec = PM_CODEC_PCM16;
     h.session_id = session;
@@ -35,19 +34,8 @@ std::vector<uint8_t> audio_packet(uint32_t session, uint32_t seq, const std::vec
         payload[2 * i] = static_cast<uint8_t>(pcm[i] & 0xFF);
         payload[2 * i + 1] = static_cast<uint8_t>((static_cast<uint16_t>(pcm[i]) >> 8) & 0xFF);
     }
-    if (pass.empty()) {
-        std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + payload.size());
-        pm_encode_audio(out.data(), out.size(), &h, payload.data(), payload.size());
-        return out;
-    }
-    h.flags = PM_FLAG_ENCRYPTED;
-    h.payload_len = static_cast<uint16_t>(payload.size() + PM_TAG_LEN);
-    std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + h.payload_len);
-    pm_write_audio_header(out.data(), &h);
-    uint8_t key[32];
-    pm_derive_key(pass.data(), pass.size(), session, key);
-    pm_seal(key, out.data(), PM_AUDIO_HEADER_LEN, session, seq, h.timestamp_us, payload.data(),
-            payload.size(), out.data() + PM_AUDIO_HEADER_LEN);
+    std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + payload.size());
+    pm_encode_audio(out.data(), out.size(), &h, payload.data(), payload.size());
     return out;
 }
 
@@ -58,10 +46,11 @@ std::vector<int16_t> tone(int seq, size_t n = 480) {
     return v;
 }
 
-net::Endpoint ep(const char* ip, uint16_t port) {
-    net::Endpoint e;
-    net::Endpoint::parse(ip, port, &e);
-    return e;
+SourceId phone(uint64_t conn) {
+    SourceId s;
+    s.conn_id = conn;
+    s.name = "Pixel " + std::to_string(conn);
+    return s;
 }
 
 struct Rig {
@@ -72,9 +61,7 @@ struct Rig {
         rx.set_mic_sink(&mic);
         rx.set_monitor_sink(&mon);
     }
-    void feed(const std::vector<uint8_t>& p, const net::Endpoint& from = ep("192.168.1.20", 50000)) {
-        rx.handle_datagram(p.data(), p.size(), from);
-    }
+    uint8_t feed(const std::vector<uint8_t>& p, uint64_t conn = 1) { return rx.submit(phone(conn), p.data(), p.size()); }
 };
 }  // namespace
 
@@ -88,7 +75,7 @@ TEST(rx_plaintext_audio_reaches_the_mic_sink_unchanged) {
     CHECK(snap.connected);
     CHECK_EQ(snap.packets, 10u);
     CHECK_EQ(snap.lost, 0u);
-    CHECK(!snap.encrypted);
+    CHECK(snap.peer == "Pixel 1");
     CHECK(r.mon.got.empty());  // monitor is off by default
 }
 
@@ -109,53 +96,30 @@ TEST(rx_reorders_and_conceals_losses) {
     CHECK_NEAR(r.mic.got[2 * 480 + 10], t2[10] / 32768.0, 1e-6);  // reordered 2 landed in slot 2
 }
 
-TEST(rx_pin_on_pc_rejects_plaintext_injection) {
+TEST(rx_second_phone_is_busy_until_first_disconnects_or_times_out) {
     Rig r;
-    r.rx.set_passphrase("hunter2");
-    r.feed(audio_packet(1, 0, tone(0)));
-    CHECK(r.mic.got.empty());
-    const auto snap = r.rx.snapshot();
-    CHECK_EQ(snap.last_reject, PM_STATUS_PIN_REQUIRED);
-    CHECK(!snap.connected);
-}
-
-TEST(rx_decrypts_with_matching_pin_and_rejects_wrong_pin) {
-    Rig r;
-    r.rx.set_passphrase("hunter2");
-    r.feed(audio_packet(5, 0, tone(0), 48000, "hunter2"));
-    r.feed(audio_packet(5, 1, tone(1), 48000, "hunter2"));
-    CHECK_EQ(r.mic.got.size(), 960u);
-    CHECK(r.rx.snapshot().encrypted);
-
-    Rig w;
-    w.rx.set_passphrase("hunter3");
-    w.feed(audio_packet(5, 0, tone(0), 48000, "hunter2"));
-    CHECK(w.mic.got.empty());
-    CHECK_EQ(w.rx.snapshot().last_reject, PM_STATUS_PIN_WRONG);
-}
-
-TEST(rx_encrypted_audio_without_pc_pin_is_reported) {
-    Rig r;
-    r.feed(audio_packet(5, 0, tone(0), 48000, "secret"));
-    CHECK(r.mic.got.empty());
-    CHECK_EQ(r.rx.snapshot().last_reject, PM_STATUS_PIN_MISSING);
-}
-
-TEST(rx_second_sender_is_busy_until_first_times_out) {
-    Rig r;
-    r.feed(audio_packet(1, 0, tone(0)), ep("192.168.1.20", 5000));
-    r.feed(audio_packet(2, 0, tone(0)), ep("192.168.1.21", 5000));
+    CHECK_EQ(r.feed(audio_packet(1, 0, tone(0)), 1), PM_STATUS_OK);
+    CHECK_EQ(r.feed(audio_packet(2, 0, tone(0)), 2), PM_STATUS_BUSY);
     CHECK_EQ(r.mic.got.size(), 480u);  // the intruder's frame was not mixed in
     CHECK_EQ(r.rx.snapshot().last_reject, PM_STATUS_BUSY);
+    r.rx.release_conn(1);
+    CHECK(!r.rx.snapshot().connected);
+    CHECK_EQ(r.feed(audio_packet(2, 0, tone(0)), 2), PM_STATUS_OK);
+
+    Rig t;
+    t.feed(audio_packet(1, 0, tone(0)), 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(Receiver::kSessionTimeoutMs + 50));
+    CHECK_EQ(t.feed(audio_packet(2, 0, tone(0)), 2), PM_STATUS_OK);  // the silent owner lost the mic
 }
 
-TEST(rx_new_session_from_same_phone_takes_over_after_timeout_and_flushes) {
+TEST(rx_new_session_on_same_connection_takes_over_and_flushes) {
     Rig r;
     r.feed(audio_packet(1, 0, tone(0)));
-    std::this_thread::sleep_for(std::chrono::milliseconds(Receiver::kSessionTimeoutMs + 50));
-    r.feed(audio_packet(2, 0, tone(0)));  // the phone restarted streaming
-    CHECK_EQ(r.mic.got.size(), 960u);
+    r.feed(audio_packet(1, 1, tone(1)));
+    CHECK_EQ(r.feed(audio_packet(2, 0, tone(0))), PM_STATUS_OK);  // the phone restarted streaming
+    CHECK_EQ(r.mic.got.size(), 1440u);
     CHECK(r.mic.flushes >= 2);
+    CHECK_EQ(r.rx.snapshot().session_received, 1u);
 }
 
 TEST(rx_resamples_44k1_senders_to_48k) {
@@ -163,25 +127,6 @@ TEST(rx_resamples_44k1_senders_to_48k) {
     for (int s = 0; s < 100; ++s) r.feed(audio_packet(3, s, tone(s, 441), 44100));
     CHECK(std::abs(static_cast<long>(r.mic.got.size()) - 48000) < 10);
     CHECK_EQ(r.rx.snapshot().sample_rate, 44100u);
-}
-
-TEST(rx_accepts_legacy_v1_plaintext_and_refuses_v1_encrypted) {
-    Rig r;
-    std::vector<uint8_t> v1(18 + 960, 0);
-    pm_w16(v1.data(), PM_MAGIC);
-    v1[2] = 1;
-    v1[3] = 0;
-    pm_w16(v1.data() + 16, 960);
-    r.feed(v1);
-    CHECK_EQ(r.mic.got.size(), 480u);
-    CHECK_EQ(r.rx.snapshot().sender_version, 1);
-
-    Rig e;
-    e.rx.set_passphrase("x");
-    v1[3] = 0x80;
-    e.feed(v1);
-    CHECK(e.mic.got.empty());
-    CHECK(e.rx.snapshot().legacy_encrypted_seen);
 }
 
 TEST(rx_mute_and_gain_apply) {
@@ -199,7 +144,7 @@ TEST(rx_mute_and_gain_apply) {
 TEST(rx_garbage_is_counted_not_played) {
     Rig r;
     const uint8_t junk[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
-    r.rx.handle_datagram(junk, sizeof junk, ep("10.0.0.1", 1));
+    CHECK_EQ(r.rx.submit(phone(1), junk, sizeof junk), PM_STATUS_UNSUPPORTED);
     auto odd = audio_packet(1, 0, tone(0));
     odd.push_back(0);  // length mismatch
     r.feed(odd);
@@ -208,88 +153,18 @@ TEST(rx_garbage_is_counted_not_played) {
     CHECK(r.mic.got.empty());
 }
 
-TEST(rx_web_source_is_trusted_even_with_pin) {
+TEST(rx_status_reports_the_active_session_only) {
     Rig r;
-    r.rx.set_passphrase("pin");
-    SourceId web;
-    web.via = SourceId::Via::Web;
-    web.conn_id = 1;
-    const auto p = audio_packet(11, 0, tone(0));
-    CHECK_EQ(r.rx.submit(web, p.data(), p.size(), true), PM_STATUS_OK);
-    CHECK_EQ(r.mic.got.size(), 480u);
-    r.rx.release_conn(1);
-    CHECK(!r.rx.snapshot().connected);
-}
-
-TEST(rx_udp_discovery_and_status_feedback_over_loopback) {
-    Receiver rx;
-    CollectSink mic;
-    rx.set_mic_sink(&mic);
-    rx.set_voice_focus(false);
-    rx.set_host_name("test-pc");
-    std::string err;
-    CHECK(rx.start(0, &err));
-    const uint16_t port = rx.port();
-
-    net::UdpSocket phone;
-    CHECK(phone.open(0, &err));
-    const auto pc = ep("127.0.0.1", port);
-    uint8_t buf[256];
-    net::Endpoint from;
-
-    // Discovery.
-    uint8_t hello[PM_HELLO_LEN];
-    pm_encode_hello(hello, 4242);
-    CHECK(phone.send_to(pc, hello, sizeof hello));
-    int n = phone.recv(buf, sizeof buf, &from, 2000);
-    CHECK(n > 0);
-    pm_announce a{};
-    CHECK_EQ(pm_decode_announce(buf, static_cast<size_t>(n), &a), PM_OK);
-    CHECK_EQ(a.nonce, 4242u);
-    CHECK_EQ(a.audio_port, port);
-    CHECK(std::string(a.name) == "test-pc");
-
-    // Audio -> STATUS ok comes back to the sender.
-    for (int s = 0; s < 5; ++s) {
-        const auto p = audio_packet(77, s, tone(s));
-        phone.send_to(pc, p.data(), p.size());
-    }
-    pm_status st{};
-    bool got_ok = false;
-    for (int i = 0; i < 20 && !got_ok; ++i) {
-        n = phone.recv(buf, sizeof buf, &from, 200);
-        if (n > 0 && pm_decode_status(buf, static_cast<size_t>(n), &st) == PM_OK && st.state == PM_STATUS_OK)
-            got_ok = true;
-    }
-    CHECK(got_ok);
-    CHECK_EQ(st.session_id, 77u);
-    CHECK(st.received >= 1u);
-
-    // Let the receiver finish the first five before changing policy.
-    for (int i = 0; i < 100 && rx.snapshot().packets < 5; ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    CHECK_EQ(rx.snapshot().packets, 5u);
-
-    // Set a PIN: plaintext is now refused and the phone is told why.
-    rx.set_passphrase("1234");
-    std::this_thread::sleep_for(std::chrono::milliseconds(300));
-    const auto p = audio_packet(77, 5, tone(5));
-    phone.send_to(pc, p.data(), p.size());
-    bool got_reject = false;
-    for (int i = 0; i < 20 && !got_reject; ++i) {
-        n = phone.recv(buf, sizeof buf, &from, 200);
-        if (n > 0 && pm_decode_status(buf, static_cast<size_t>(n), &st) == PM_OK && st.state == PM_STATUS_PIN_REQUIRED)
-            got_reject = true;
-    }
-    CHECK(got_reject);
-    rx.stop();
-    CHECK_EQ(mic.got.size(), 5u * 480);
-}
-
-TEST(rx_second_instance_cannot_bind_same_port) {
-    Receiver a, b;
-    std::string err;
-    CHECK(a.start(0, &err));
-    CHECK(!b.start(a.port(), &err));
-    CHECK(!err.empty());
+    for (int s = 0; s < 4; ++s) r.feed(audio_packet(9, s, tone(s)), 1);
+    SourceId me = phone(1);
+    me.session = 9;
+    const pm_status st = r.rx.make_status(me, PM_STATUS_OK);
+    CHECK_EQ(st.session_id, 9u);
+    CHECK_EQ(st.received, 4u);
+    CHECK_EQ(st.lost, 0u);
+    SourceId other = phone(2);
+    other.session = 5;
+    const pm_status busy = r.rx.make_status(other, PM_STATUS_BUSY);
+    CHECK_EQ(busy.state, PM_STATUS_BUSY);
+    CHECK_EQ(busy.received, 0u);
 }

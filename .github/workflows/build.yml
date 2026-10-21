@@ -218,7 +218,6 @@ jobs:
           path: |
             build/bin/Release/PhoneMic.exe
             build/bin/Release/phonemic-receiver.exe
-            build/bin/Release/phonemic-softphone.exe
             build/bin/Release/phonemic-vmic-check.exe
             build/bin/Release/phonemic-driver.exe
 
@@ -245,7 +244,7 @@ jobs:
         run: |
           mkdir -p dist
           ditto build/bin/PhoneMic.app dist/PhoneMic.app
-          cp build/bin/phonemic-receiver build/bin/phonemic-softphone build/bin/phonemic-vmic-check dist/
+          cp build/bin/phonemic-receiver build/bin/phonemic-vmic-check dist/
           ditto -c -k --keepParent dist PhoneMic-macos.zip
       - uses: actions/upload-artifact@v4
         with:
@@ -298,7 +297,7 @@ jobs:
           path: dist/driver
       - name: Assemble PhoneMic-windows-x64.zip
         run: |
-          cp bin/PhoneMic.exe bin/phonemic-receiver.exe bin/phonemic-softphone.exe bin/phonemic-vmic-check.exe dist/
+          cp bin/PhoneMic.exe bin/phonemic-receiver.exe bin/phonemic-vmic-check.exe dist/
           cp bin/phonemic-driver.exe dist/driver/
           (cd dist && zip -r ../PhoneMic-windows-x64.zip .)
           cp bin/PhoneMic.exe PhoneMic.exe

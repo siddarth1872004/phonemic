@@ -87,11 +87,11 @@ TEST(opus_receiver_decodes_stream) {
     rx.set_mic_sink(&mic);
     rx.set_voice_focus(false);
     OpusVoiceEncoder enc(48000);
-    net::Endpoint from;
-    net::Endpoint::parse("192.168.1.9", 5000, &from);
+    SourceId from;
+    from.conn_id = 1;
     for (uint32_t s = 0; s < 50; ++s) {
         const auto p = opus_packet(enc, s);
-        rx.handle_datagram(p.data(), p.size(), from);
+        rx.submit(from, p.data(), p.size());
     }
     CHECK_EQ(mic.got.size(), 50u * 480);
     const auto snap = rx.snapshot();
@@ -106,8 +106,8 @@ TEST(opus_lost_packet_is_rebuilt_from_fec) {
     rx.set_mic_sink(&mic);
     rx.set_voice_focus(false);
     OpusVoiceEncoder enc(48000);
-    net::Endpoint from;
-    net::Endpoint::parse("192.168.1.9", 5000, &from);
+    SourceId from;
+    from.conn_id = 1;
     // libopus decides per frame whether to add FEC (LBRR) data; drop a packet
     // whose successor carries it, as happens on a real lossy link.
     std::vector<std::vector<uint8_t>> pkts, raws;
@@ -121,7 +121,7 @@ TEST(opus_lost_packet_is_rebuilt_from_fec) {
         if (opus_packet_has_lbrr(raws[s + 1].data(), static_cast<opus_int32>(raws[s + 1].size())) == 1) drop = s;
     CHECK(drop >= 0);  // voice at 48 kbps (hybrid mode) does carry FEC
     for (int s = 0; s < 80; ++s)
-        if (s != drop) rx.handle_datagram(pkts[s].data(), pkts[s].size(), from);
+        if (s != drop) rx.submit(from, pkts[s].data(), pkts[s].size());
     const auto snap = rx.snapshot();
     CHECK_EQ(snap.lost, 1u);
     CHECK_EQ(snap.fec_recovered, 1u);       // rebuilt from the next packet
@@ -134,8 +134,8 @@ TEST(opus_corrupt_packet_is_concealed_not_fatal) {
     rx.set_mic_sink(&mic);
     rx.set_voice_focus(false);
     OpusVoiceEncoder enc(48000);
-    net::Endpoint from;
-    net::Endpoint::parse("192.168.1.9", 5000, &from);
+    SourceId from;
+    from.conn_id = 1;
     for (uint32_t s = 0; s < 10; ++s) {
         auto p = opus_packet(enc, s);
         if (s == 5) {
@@ -144,7 +144,7 @@ TEST(opus_corrupt_packet_is_concealed_not_fatal) {
             p[PM_AUDIO_HEADER_LEN] = 0xFF;
             pm_w16(p.data() + 6, 1);
         }
-        rx.handle_datagram(p.data(), p.size(), from);
+        rx.submit(from, p.data(), p.size());
     }
     CHECK_EQ(mic.got.size(), 10u * 480);
     for (float x : mic.got) CHECK(std::isfinite(x));

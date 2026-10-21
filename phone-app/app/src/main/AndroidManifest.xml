@@ -2,19 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Discovery reads the active network's subnet to aim its broadcast. -->
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Low-latency Wi-Fi lock while streaming (keeps the radio out of power save). -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The link to the PC is a Bluetooth RFCOMM socket to a paired device:
+         Android 12+ asks for "Nearby devices" (CONNECT only, no scanning). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <!-- Android 13+: needed for the visible "PhoneMic is using your microphone" notification. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
 
-    <!-- allowBackup=false: the saved PIN must not end up in cloud backups. -->
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -35,7 +36,8 @@
         </activity>
 
         <!-- Streaming runs in a foreground service so capture survives the app
-             going to the background. The native engine lives inside it. -->
+             going to the background. The native engine and the Bluetooth link
+             live inside it. -->
         <service
             android:name=".StreamingService"
             android:exported="false"

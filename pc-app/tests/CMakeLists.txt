@@ -1,7 +1,6 @@
 add_executable(phonemic-tests
   test_main.cpp
   test_wire.cpp
-  test_crypto.cpp
   test_jitter.cpp
   test_voice_fx.cpp
   test_dsp.cpp
@@ -10,15 +9,10 @@ add_executable(phonemic-tests
   test_receiver.cpp
   test_ipc.cpp
   test_persistent_mic.cpp
-  test_websocket.cpp
   test_settings.cpp
   test_opus.cpp
-  test_usb.cpp
+  test_bluetooth.cpp
 )
-if(PHONEMIC_WITH_WEB)
-  target_sources(phonemic-tests PRIVATE test_web_server.cpp)
-  target_link_libraries(phonemic-tests PRIVATE mbedtls mbedx509 mbedcrypto)
-endif()
 target_link_libraries(phonemic-tests PRIVATE phonemic_core opus)
 if(MSVC)
   target_compile_options(phonemic-tests PRIVATE /utf-8)

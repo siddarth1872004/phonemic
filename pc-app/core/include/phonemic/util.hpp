@@ -23,16 +23,6 @@ inline uint64_t wall_us() {
     return static_cast<uint64_t>(duration_cast<microseconds>(system_clock::now().time_since_epoch()).count());
 }
 
-// Cryptographically secure random bytes from the OS. Returns false only if the
-// OS RNG is unavailable.
-bool random_bytes(void* out, size_t n);
-uint32_t random_u32_nonzero();
-// URL-safe random token (lowercase letters + digits, no look-alikes).
-std::string random_token(size_t len);
-
-// Constant-time string comparison (for tokens).
-bool ct_equal(const std::string& a, const std::string& b);
-
 // Thread-safe "recent activity" log shown in the UI and printed by the CLI.
 class EventLog {
 public:

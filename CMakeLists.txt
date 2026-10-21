@@ -13,7 +13,10 @@ cmake_minimum_required(VERSION 3.21)
 # Must be set before project().
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 
-project(PhoneMic VERSION 0.3.1 LANGUAGES C CXX)
+project(PhoneMic VERSION 0.4.0 LANGUAGES C CXX)
+if(APPLE)
+  enable_language(OBJCXX)  # IOBluetooth (pc-app/core/src/bluetooth_mac.mm)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,10 +32,9 @@ endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 option(PHONEMIC_BUILD_GUI   "Build the PhoneMic desktop window (Dear ImGui + GLFW)" ON)
-option(PHONEMIC_BUILD_TOOLS "Build phonemic-receiver / phonemic-softphone"        ON)
+option(PHONEMIC_BUILD_TOOLS "Build phonemic-receiver / phonemic-vmic-check"      ON)
 option(PHONEMIC_BUILD_TESTS "Build the unit/integration test suite"               ON)
 option(PHONEMIC_WITH_RNNOISE "Voice Focus noise removal (RNNoise)"                ON)
-option(PHONEMIC_WITH_WEB    "Built-in HTTPS server for the browser mic (mbedTLS)" ON)
 option(PHONEMIC_WAYLAND     "Linux: native Wayland window as well as X11 (needs wayland-scanner + headers)" OFF)
 option(PHONEMIC_PORTABLE    "Linux: link libstdc++/libgcc statically (one binary for every distro)" OFF)
 
@@ -40,6 +42,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 if(PHONEMIC_PORTABLE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_link_options(-static-libstdc++ -static-libgcc)
+endif()
+
+# Small binaries: drop unused code and symbols from release builds (MSVC's
+# Release defaults, /Gy + /OPT:REF + /OPT:ICF, already do this).
+if(NOT MSVC)
+  add_compile_options($<$<CONFIG:Release,MinSizeRel>:-ffunction-sections> $<$<CONFIG:Release,MinSizeRel>:-fdata-sections>)
+  if(APPLE)
+    add_link_options($<$<CONFIG:Release,MinSizeRel>:-Wl,-dead_strip>)
+  else()
+    add_link_options($<$<CONFIG:Release,MinSizeRel>:-Wl,--gc-sections> $<$<CONFIG:Release,MinSizeRel>:-s>)
+  endif()
 endif()
 
 include(cmake/Dependencies.cmake)
@@ -62,7 +75,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(PROGRAMS $<TARGET_FILE:PhoneMic> DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME phonemic COMPONENT phonemic)
   endif()
   if(PHONEMIC_BUILD_TOOLS)
-    install(TARGETS phonemic-receiver phonemic-softphone phonemic-vmic-check
+    install(TARGETS phonemic-receiver phonemic-vmic-check
             RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT phonemic)
   endif()
   install(FILES ${_pkg}/phonemic.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications COMPONENT phonemic)
@@ -74,7 +87,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
   set(CPACK_PACKAGE_NAME phonemic)
   set(CPACK_PACKAGE_VENDOR "PhoneMic")
-  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Use your phone as a wireless microphone for your PC")
+  set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Use your phone as a Bluetooth microphone for your PC")
   set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/siddarth1872004/phonemic")
   set(CPACK_PACKAGE_CONTACT "PhoneMic <https://github.com/siddarth1872004/phonemic/issues>")
   set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
@@ -84,9 +97,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(CPACK_RPM_COMPONENT_INSTALL ON)
   set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
   # The binaries need only glibc, libGL and X11 at link time; the sound server
-  # (libpulse) and Wayland are loaded at run time when present.
+  # (libpulse), D-Bus (libdbus, to reach BlueZ) and Wayland are loaded at run
+  # time when present.
   set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.28), libgl1, libx11-6")
-  set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "libpulse0, pipewire-pulse | pulseaudio")
+  set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "libpulse0, pipewire-pulse | pulseaudio, bluez, libdbus-1-3")
   set(CPACK_DEBIAN_PACKAGE_SECTION sound)
   # Normally asked from dpkg, which the (RPM-based) release build container lacks.
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")

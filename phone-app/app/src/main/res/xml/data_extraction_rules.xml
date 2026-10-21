@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 12+: keep settings (including the PIN) out of cloud backup and device transfer. -->
+<!-- Android 12+: keep settings out of cloud backup and device transfer. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="." />

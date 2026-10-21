@@ -1,4 +1,4 @@
-// Protocol framing tests (ported from the old Rust `protocol` crate + v2).
+// Protocol framing tests: packet layout, validation and RFCOMM frame prefixes.
 #include <phonemic/wire.h>
 
 #include <cstring>
@@ -9,10 +9,9 @@
 namespace {
 const uint8_t kPayload[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
-pm_audio_header hdr(uint32_t seq = 42, uint64_t ts = 1234567890ull, uint8_t flags = 0) {
+pm_audio_header hdr(uint32_t seq = 42, uint64_t ts = 1234567890ull) {
     pm_audio_header h{};
     h.codec = PM_CODEC_PCM16;
-    h.flags = flags;
     h.session_id = 0xCAFEBABE;
     h.seq = seq;
     h.timestamp_us = ts;
@@ -26,18 +25,6 @@ std::vector<uint8_t> encode(const pm_audio_header& h, const uint8_t* p, size_t n
     return b;
 }
 
-// A legacy v1 datagram, byte for byte as the old phone app produced it.
-std::vector<uint8_t> v1_packet(uint8_t codec_byte, uint32_t seq, uint64_t ts, const uint8_t* p, uint16_t n) {
-    std::vector<uint8_t> b(18 + n);
-    pm_w16(b.data(), PM_MAGIC);
-    b[2] = 1;
-    b[3] = codec_byte;
-    pm_w32(b.data() + 4, seq);
-    pm_w64(b.data() + 8, ts);
-    pm_w16(b.data() + 16, n);
-    std::memcpy(b.data() + 18, p, n);
-    return b;
-}
 }  // namespace
 
 TEST(wire_roundtrip_pcm16) {
@@ -45,14 +32,12 @@ TEST(wire_roundtrip_pcm16) {
     pm_audio_header d{};
     const uint8_t* p = nullptr;
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_OK);
-    CHECK_EQ(d.version, 2);
     CHECK_EQ(d.codec, PM_CODEC_PCM16);
     CHECK_EQ(d.session_id, 0xCAFEBABEu);
     CHECK_EQ(d.seq, 42u);
     CHECK_EQ(d.timestamp_us, 1234567890ull);
     CHECK_EQ(d.sample_rate, 48000u);
     CHECK_EQ(d.payload_len, sizeof kPayload);
-    CHECK_EQ(d.header_len, PM_AUDIO_HEADER_LEN);
     CHECK(std::memcmp(p, kPayload, sizeof kPayload) == 0);
 }
 
@@ -73,14 +58,6 @@ TEST(wire_empty_payload_is_legal_framing) {
     CHECK_EQ(d.payload_len, 0);
 }
 
-TEST(wire_encrypted_flag_roundtrips) {
-    const auto b = encode(hdr(1, 2, PM_FLAG_ENCRYPTED), kPayload, 3);
-    pm_audio_header d{};
-    const uint8_t* p = nullptr;
-    CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_OK);
-    CHECK(d.flags & PM_FLAG_ENCRYPTED);
-}
-
 TEST(wire_magic_is_ascii_pm_and_layout_is_little_endian) {
     const auto b = encode(hdr(0x04030201u, 0x0807060504030201ull), kPayload, sizeof kPayload);
     CHECK(b[0] == 'P' && b[1] == 'M');
@@ -95,7 +72,6 @@ TEST(wire_magic_is_ascii_pm_and_layout_is_little_endian) {
 
 TEST(wire_header_len_matches_layout) {
     CHECK_EQ(PM_AUDIO_HEADER_LEN, 2 + 1 + 1 + 1 + 1 + 2 + 4 + 4 + 8 + 4);
-    CHECK_EQ(PM_LEGACY_HEADER_LEN, 2 + 1 + 1 + 4 + 8 + 2);
 }
 
 TEST(wire_rejects_too_short) {
@@ -129,7 +105,7 @@ TEST(wire_rejects_unknown_codec_and_flags) {
     b[4] = 5;
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_ERR_UNKNOWN_CODEC);
     b = encode(hdr(), kPayload, sizeof kPayload);
-    b[5] = 0x40;  // undefined flag bit
+    b[5] = 0x01;  // no flags are defined
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_ERR_BAD_FIELD);
 }
 
@@ -164,58 +140,28 @@ TEST(wire_encode_rejects_small_output_and_huge_payload) {
     CHECK_EQ(pm_encode_audio(out.data(), out.size(), &h, big.data(), big.size()), PM_ERR_PAYLOAD_TOO_LARGE);
 }
 
-TEST(wire_decodes_legacy_v1_packets) {
-    const auto b = v1_packet(0x00, 12345, 0x1122334455667788ull, kPayload, 8);
-    pm_audio_header d{};
-    const uint8_t* p = nullptr;
-    CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_OK);
-    CHECK_EQ(d.version, 1);
-    CHECK_EQ(d.seq, 12345u);
-    CHECK_EQ(d.timestamp_us, 0x1122334455667788ull);
-    CHECK_EQ(d.session_id, 0u);
-    CHECK_EQ(d.sample_rate, 48000u);
-    CHECK_EQ(d.header_len, PM_LEGACY_HEADER_LEN);
-    CHECK_EQ(p[7], 8);
-    const auto e = v1_packet(0x80, 1, 1, kPayload, 4);  // v1 encrypted flag in bit 7
-    CHECK_EQ(pm_decode_audio(e.data(), e.size(), &d, &p), PM_OK);
-    CHECK(d.flags & PM_FLAG_ENCRYPTED);
+TEST(wire_frame_prefix_is_little_endian_length) {
+    uint8_t b[PM_FRAME_PREFIX_LEN];
+    pm_write_frame_prefix(b, 0x0123);
+    CHECK_EQ(b[0], 0x23);
+    CHECK_EQ(b[1], 0x01);
 }
 
-TEST(wire_hello_roundtrip) {
-    uint8_t b[PM_HELLO_LEN];
-    CHECK_EQ(pm_encode_hello(b, 0xDEADBEEF), PM_HELLO_LEN);
-    uint32_t nonce = 0;
-    CHECK_EQ(pm_decode_hello(b, sizeof b, &nonce), PM_OK);
-    CHECK_EQ(nonce, 0xDEADBEEFu);
-    CHECK_EQ(pm_decode_hello(b, sizeof b - 1, &nonce), PM_ERR_LEN_MISMATCH);
+TEST(wire_status_is_not_audio) {
+    pm_status s{};
+    uint8_t b[PM_STATUS_LEN];
+    pm_encode_status(b, &s);
+    uint8_t kind = 0xFF;
+    CHECK_EQ(pm_peek(b, sizeof b, &kind), PM_OK);
+    CHECK_EQ(kind, PM_KIND_STATUS);
     pm_audio_header d{};
     const uint8_t* p = nullptr;
     CHECK_EQ(pm_decode_audio(b, sizeof b, &d, &p), PM_ERR_WRONG_KIND);
 }
 
-TEST(wire_announce_roundtrip_and_name_truncation) {
-    pm_announce a{};
-    a.nonce = 77;
-    a.audio_port = 4010;
-    a.flags = PM_ANNOUNCE_FLAG_PIN;
-    std::strcpy(a.name, "desk-pc");
-    uint8_t b[128];
-    const int n = pm_encode_announce(b, sizeof b, &a);
-    CHECK_EQ(n, PM_ANNOUNCE_MIN_LEN + 7);
-    pm_announce d{};
-    CHECK_EQ(pm_decode_announce(b, static_cast<size_t>(n), &d), PM_OK);
-    CHECK_EQ(d.nonce, 77u);
-    CHECK_EQ(d.audio_port, 4010);
-    CHECK_EQ(d.flags, PM_ANNOUNCE_FLAG_PIN);
-    CHECK(std::string(d.name) == "desk-pc");
-    // A lying name_len is rejected, never over-read.
-    b[11] = 50;
-    CHECK(pm_decode_announce(b, static_cast<size_t>(n), &d) != PM_OK);
-}
-
 TEST(wire_status_roundtrip) {
     pm_status s{};
-    s.state = PM_STATUS_PIN_WRONG;
+    s.state = PM_STATUS_BUSY;
     s.buffer_ms = 42;
     s.session_id = 9;
     s.received = 1000;
@@ -224,7 +170,7 @@ TEST(wire_status_roundtrip) {
     CHECK_EQ(pm_encode_status(b, &s), PM_STATUS_LEN);
     pm_status d{};
     CHECK_EQ(pm_decode_status(b, sizeof b, &d), PM_OK);
-    CHECK_EQ(d.state, PM_STATUS_PIN_WRONG);
+    CHECK_EQ(d.state, PM_STATUS_BUSY);
     CHECK_EQ(d.buffer_ms, 42);
     CHECK_EQ(d.session_id, 9u);
     CHECK_EQ(d.received, 1000u);
@@ -252,8 +198,6 @@ TEST(wire_decoder_never_crashes_on_garbage) {
         if (pm_decode_audio(b.data(), b.size(), &d, &p) == PM_OK) {
             CHECK(p >= b.data() && p + d.payload_len <= b.data() + b.size());
         }
-        pm_announce a{};
-        pm_decode_announce(b.data(), b.size(), &a);
         pm_status s{};
         pm_decode_status(b.data(), b.size(), &s);
     }

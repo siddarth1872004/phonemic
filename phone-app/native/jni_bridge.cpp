@@ -1,10 +1,13 @@
 // JNI glue between com.phonemic.NativeBridge and the native AudioEngine.
-// Only control calls and telemetry cross here — never an audio buffer.
+// Control calls and telemetry cross here, plus the encoded frames on their way
+// to the Bluetooth socket (Java owns it) — never a raw audio buffer.
 #include <jni.h>
 
+#include <algorithm>
 #include <memory>
 #include <mutex>
-#include <string>
+
+#include <phonemic/wire.h>
 
 #include "audio_engine.h"
 
@@ -17,27 +20,40 @@ phonemic::AudioEngine* engine() {
     if (!g_engine) g_engine = std::make_unique<phonemic::AudioEngine>();
     return g_engine.get();
 }
-
-std::string to_string(JNIEnv* env, jstring s) {
-    if (!s) return {};
-    const char* c = env->GetStringUTFChars(s, nullptr);
-    std::string out(c ? c : "");
-    if (c) env->ReleaseStringUTFChars(s, c);
-    return out;
-}
 }  // namespace
 
 extern "C" {
 
-JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_start(JNIEnv* env, jobject, jstring ip, jint port,
-                                                            jstring pin, jboolean voice_focus, jboolean opus,
-                                                            jboolean usb) {
-    if (port <= 0 || port > 65535) return phonemic::AudioEngine::kBadAddress;
-    return engine()->start(to_string(env, ip), static_cast<uint16_t>(port), to_string(env, pin),
-                           voice_focus == JNI_TRUE, opus == JNI_TRUE, usb == JNI_TRUE);
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_start(JNIEnv*, jobject, jboolean voice_focus) {
+    return engine()->start(voice_focus == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_stop(JNIEnv*, jobject) { engine()->stop(); }
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_readOutgoing(JNIEnv* env, jobject, jbyteArray buf,
+                                                                   jint timeout_ms) {
+    // Through a stack buffer, so the wait never holds the Java array pinned.
+    // `buf` must fit one whole frame (PM_FRAME_PREFIX_LEN + PM_MAX_DATAGRAM).
+    jbyte tmp[PM_FRAME_PREFIX_LEN + PM_MAX_DATAGRAM];
+    const jsize cap = env->GetArrayLength(buf);
+    const int n = engine()->take_outgoing(reinterpret_cast<uint8_t*>(tmp),
+                                          std::min<size_t>(sizeof tmp, static_cast<size_t>(cap)), timeout_ms);
+    if (n > 0) env->SetByteArrayRegion(buf, 0, n, tmp);
+    return n;
+}
+
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_feedIncoming(JNIEnv* env, jobject, jbyteArray buf, jint n) {
+    if (n <= 0 || n > env->GetArrayLength(buf)) return;
+    jbyte tmp[1024];
+    for (jint off = 0; off < n;) {
+        const jint k = std::min<jint>(n - off, static_cast<jint>(sizeof tmp));
+        env->GetByteArrayRegion(buf, off, k, tmp);
+        engine()->feed_incoming(reinterpret_cast<const uint8_t*>(tmp), static_cast<size_t>(k));
+        off += k;
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_resetLink(JNIEnv*, jobject) { engine()->reset_link(); }
 
 JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_setMuted(JNIEnv*, jobject, jboolean m) {
     engine()->set_muted(m == JNI_TRUE);
@@ -87,10 +103,6 @@ JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcLost(JNIEnv*, jobject) 
 
 JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcReceived(JNIEnv*, jobject) {
     return static_cast<jlong>(engine()->pc_received());
-}
-
-JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_lastSendErrno(JNIEnv*, jobject) {
-    return engine()->last_send_errno();
 }
 
 }  // extern "C"

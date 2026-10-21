@@ -1,32 +1,34 @@
 # PhoneMic
 
-PhoneMic turns your phone into a wireless microphone for your computer. Speak
+PhoneMic turns your phone into a Bluetooth microphone for your computer. Speak
 into the phone and the audio arrives on the PC as a normal microphone,
 **PhoneMic Microphone**, that Discord, Zoom, Teams, OBS, browsers and every
 other app can select.
 
 It is free and open source, needs no extra hardware or account, and is native
 code throughout: a C++ desktop app for Windows, macOS and Linux, and an Android
-app with a C++ audio engine. Any phone can also connect through its web browser
-without installing anything.
+app with a C++ audio engine. The phone and PC talk over Bluetooth through each
+system's own Bluetooth stack: no Wi-Fi, no network setup and no Bluetooth
+drivers to install. Both apps are small and fast, with a true-black (OLED)
+interface.
 
 ## Features
 
 **Connecting**
-- The Android app finds the PC on the local network by itself; no IP addresses
-  to type.
-- Browser mode: scan a QR code shown by the PC and the phone's browser becomes
-  the microphone (Android and iPhone).
-- USB cable mode for poor or blocked Wi-Fi: PhoneMic sets up the connection
-  over the cable automatically.
-- The PC reports its state back to the phone (connected, wrong PIN, PC busy,
-  not running), so problems are shown where you are looking.
+- Bluetooth only: pair the phone with the PC once in the system settings, then
+  pick the PC in the phone app. No IP addresses, router or firewall involved.
+- The link is a Bluetooth RFCOMM channel to PhoneMic's own service, published
+  through the operating system's Bluetooth stack (BlueZ on Linux, the Windows
+  Bluetooth stack, IOBluetooth on macOS). Nothing extra is installed for it.
+- The phone reconnects by itself if the link drops or the PC app restarts.
+- The PC reports its state back to the phone (connected, PC busy, not running),
+  so problems are shown where you are looking.
 
 **Audio**
 - Low latency: 10 ms packets, a lock-free audio path and a selectable buffer
   from 20 to 150 ms.
-- Opus compression (about 48 kbps instead of 768 kbps) with forward error
-  correction that rebuilds lost packets.
+- Opus compression (about 48 kbps, comfortably inside a Bluetooth link) with
+  forward error correction that rebuilds lost packets.
 - Clock-drift compensation, so the delay does not creep up and there are no
   periodic clicks during long calls.
 - Voice Focus noise removal (the phone's own suppressor plus RNNoise on the PC),
@@ -43,9 +45,7 @@ without installing anything.
   microphone.
 
 **Security**
-- Optional encryption: the same PIN or passphrase on both devices gives
-  XChaCha20-Poly1305 with Argon2id-derived keys. With a PIN set, unencrypted
-  audio is refused.
+- Only paired devices can connect, and Bluetooth encrypts the link.
 - Only one phone can feed the microphone at a time.
 
 ## Download
@@ -68,10 +68,9 @@ Get the latest version from the
 ### 1. Install PhoneMic on the computer
 
 - **Windows:** unzip `PhoneMic-windows-x64.zip` and run `PhoneMic.exe`. Keep the
-  `driver` folder next to it. Allow PhoneMic through the firewall on private
-  networks when Windows asks.
+  `driver` folder next to it.
 - **macOS:** unzip and open `PhoneMic.app`. The first time, right-click it and
-  choose Open.
+  choose Open, and allow Bluetooth when macOS asks.
 - **Linux:** make the AppImage executable and run it, or install the `.deb` or
   `.rpm` package.
 
@@ -83,20 +82,19 @@ Get the latest version from the
 | macOS | Click **Install PhoneMic driver** and enter your password. |
 | Linux | Nothing. PhoneMic creates the microphone automatically through PipeWire or PulseAudio. |
 
-On Windows the installer explains each step first. Until the driver is signed
+This is the microphone itself (the device apps record from), not a Bluetooth
+driver: the Bluetooth link always uses the system's own stack. On Windows the
+installer explains each step first. Until the driver is signed
 by Microsoft, Windows only loads it in test mode, which requires Secure Boot to
 be off. The installer asks before turning test mode on, and
 `uninstall-driver.ps1` reverses everything.
 
 ### 3. Connect the phone
 
-- **Android app:** install `PhoneMic.apk`, tap **Find my PC**, then **Start**.
-  It keeps streaming with the screen off.
-- **Any phone, no app:** tick **Browser mic** in the PhoneMic window, scan the QR
-  code, accept the PC's own certificate once (Advanced, then Proceed) and tap
-  **Start mic**.
-- **USB cable:** enable USB debugging on the phone, tick **Stream over USB** in
-  the PC window, plug the phone in and turn on **USB cable** in the phone app.
+1. Pair the phone with the PC once, in the phone's or the PC's Bluetooth
+   settings. The PhoneMic window shows the PC's Bluetooth name.
+2. Install `PhoneMic.apk`, tap **Choose your PC**, pick the PC from the paired
+   devices and tap **Start**. It keeps streaming with the screen off.
 
 ### 4. Choose the microphone in your apps
 
@@ -114,8 +112,8 @@ troubleshooting table.
 | Windows | Windows 11, version 22H2 (build 22621). Windows 10 is not supported. |
 | macOS | macOS 11. |
 | Linux | glibc 2.28 or newer (Debian 10, Ubuntu 18.10, RHEL 8 and later), X11 or Wayland, and PipeWire or PulseAudio. Plain ALSA systems can use the `snd-aloop` loopback module instead. |
-| Android | Android 10. |
-| Browser mode | A current browser on the phone, on the same network as the PC. |
+| Android | Android 10, with Bluetooth. |
+| Bluetooth | Any built-in or USB Bluetooth adapter the system already supports. On Linux, BlueZ (the standard Bluetooth service). |
 
 ## Building from source
 
@@ -140,12 +138,12 @@ how the release packages are made.
 
 ```
  Phone                                          Computer
- +------------------------------+   Wi-Fi UDP   +-----------------------------------------+
- | microphone -> lock-free ring | ------------> | decode -> authenticate / decrypt        |
- | 10 ms frames, Opus, optional |   or USB      | -> jitter buffer -> Opus / PCM decode,  |
- | encryption                   | <------------ |    loss concealment                     |
+ +------------------------------+   Bluetooth   +-----------------------------------------+
+ | microphone -> lock-free ring | ------------> | RFCOMM service "PhoneMic" (OS stack)    |
+ | 10 ms frames, Opus           |    RFCOMM     | -> jitter buffer -> Opus / PCM decode,  |
+ | -> framed queue -> socket    | <------------ |    loss concealment                     |
  +------------------------------+  status 2 Hz  | -> noise removal -> effects -> limiter  |
- Phone browser -- HTTPS / WebSocket ----------> | -> drift-compensated playout            |
+                                                | -> drift-compensated playout            |
                                                 | -> PhoneMic Microphone                  |
                                                 +-----------------------------------------+
 ```
@@ -154,9 +152,8 @@ The audio path is native on both ends, and its realtime parts never lock,
 allocate memory or make system calls. On Android, Kotlin handles only the
 interface and the app lifecycle.
 
-The wire protocol and the encryption live in two C headers
-([`wire.h`](shared/include/phonemic/wire.h),
-[`crypto.h`](shared/include/phonemic/crypto.h)) that are compiled unchanged into
+The wire protocol lives in one C header
+([`wire.h`](shared/include/phonemic/wire.h)) that is compiled unchanged into
 both the phone and the desktop app, so the two cannot drift apart. The protocol
 is documented in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
@@ -177,22 +174,20 @@ The desktop download also includes:
 | Tool | Purpose |
 |---|---|
 | `phonemic-receiver` | The receiving engine without a window, for servers and scripts. `--make-default` makes PhoneMic the default microphone; on Linux, `--keep-mic on` keeps it registered when PhoneMic is closed. Run with `--help` for all options. |
-| `phonemic-softphone` | Emulates a phone for testing, including discovery, encryption and simulated packet loss. |
 | `phonemic-vmic-check` | Plays a test tone into the PhoneMic microphone and checks that it comes back out. `--setup --default` also checks the system default microphone. |
 
 ## Repository layout
 
 | Path | Contents |
 |---|---|
-| `shared/` | Wire protocol and encryption (C99 headers and monocypher), used by the phone and the PC. |
-| `pc-app/core/` | Desktop engine: receive pipeline, buffers, DSP, audio devices, virtual microphone, browser-mic server. |
+| `shared/` | The wire protocol (a C99 header), used by the phone and the PC. |
+| `pc-app/core/` | Desktop engine: Bluetooth service, receive pipeline, buffers, DSP, audio devices, virtual microphone. |
 | `pc-app/gui/` | The desktop app's window (Dear ImGui and GLFW). |
 | `pc-app/tools/` | The command-line tools. |
 | `pc-app/tests/` | Unit and integration tests. |
 | `pc-app/driver/`, `pc-app/ipc/` | The Windows microphone driver and the shared ring the app feeds it through. |
 | `pc-app/driver-macos/` | The macOS microphone driver. |
 | `phone-app/` | The Android app (Kotlin interface, C++ and Oboe audio engine). |
-| `web-client/` | The browser microphone page, embedded in the desktop app at build time. |
 | `packaging/linux/` | Desktop entry, icon, AppStream metadata and the AppImage script. |
 | `docs/` | Protocol, architecture, building, testing, release notes and the audit of the 0.2 codebase. |
 
@@ -202,9 +197,9 @@ The desktop download also includes:
 ctest --test-dir build --output-on-failure
 ```
 
-The test suite covers the protocol (including fuzzing), the encryption
-(against known-answer vectors from independent implementations), the buffers
-under simulated clock drift, and end-to-end transfers over UDP, TLS and USB.
+The test suite covers the protocol (including fuzzing), the Bluetooth stream
+framing and per-connection pump, the buffers under simulated clock drift, and
+end-to-end transfers from framed phone packets to the microphone.
 
 Continuous integration builds and tests on Linux, Windows and macOS, runs the
 suite under AddressSanitizer and UndefinedBehaviorSanitizer, builds the Android
@@ -221,8 +216,13 @@ both by name and as the system default. See [docs/TESTING.md](docs/TESTING.md).
 - The Windows driver is built and packaged in CI but has not yet been tested on
   a wide range of hardware. Reports are welcome.
 - Linux distributions without glibc, such as Alpine, need a source build.
-- There is no Bluetooth transport. USB mode covers the case where Wi-Fi is
-  unavailable, with lower latency than Bluetooth.
+- The phone does not appear as a Bluetooth *headset* (HFP): Android apps
+  cannot act as one. It appears to the PC as the **PhoneMic Microphone** device
+  instead, which every app can use and which sounds far better than headset
+  audio (48 kHz Opus instead of 16 kHz).
+- Bluetooth adds roughly 20 to 40 ms over a wired link; the PC's buffer
+  setting absorbs its jitter.
+- iPhone is not supported (iOS has no RFCOMM for apps).
 
 ## Documentation
 
@@ -242,6 +242,5 @@ PhoneMic is dual-licensed under the [MIT License](LICENSE-MIT) and the
 [Apache License 2.0](LICENSE-APACHE); you may use it under either.
 
 Third-party components fetched at build time keep their own licenses:
-monocypher (BSD-2-Clause or CC0), RNNoise (BSD-3-Clause), Opus (BSD-3-Clause),
-miniaudio (MIT-0 or public domain), Dear ImGui (MIT), GLFW (zlib), Mbed TLS
-(Apache-2.0) and QR Code generator (MIT).
+RNNoise (BSD-3-Clause), Opus (BSD-3-Clause), miniaudio (MIT-0 or public
+domain), Dear ImGui (MIT) and GLFW (zlib).

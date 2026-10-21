@@ -1,21 +1,16 @@
 #include "audio_engine.h"
 
 #include <android/log.h>
-#include <arpa/inet.h>
-#include <errno.h>
 #include <fcntl.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <random>
 
-#include <phonemic/crypto.h>  // shared with the PC: XChaCha20-Poly1305 + Argon2id
-#include <phonemic/wire.h>    // shared with the PC: the one packet format
+#include <phonemic/wire.h>  // shared with the PC: the one packet format
 
 #include <opus.h>
 
@@ -28,6 +23,9 @@ namespace phonemic {
 namespace {
 
 constexpr int32_t kSampleRate = PM_SAMPLE_RATE;
+// Frames waiting for the Bluetooth writer. More than this (~200 ms) is pure
+// added latency, so the oldest are dropped instead.
+constexpr size_t kMaxQueued = 20;
 
 uint64_t now_us() {
     using namespace std::chrono;
@@ -49,7 +47,7 @@ uint32_t random_session() {
 
 AudioEngine::AudioEngine() : ring_(kRingSize, 0) {
     sem_init(&wake_, 0, 0);
-    packet_.resize(PM_MAX_DATAGRAM);
+    packet_.resize(PM_FRAME_PREFIX_LEN + PM_MAX_DATAGRAM);
 }
 
 AudioEngine::~AudioEngine() {
@@ -63,53 +61,16 @@ int64_t AudioEngine::pc_age_ms() const {
     return static_cast<int64_t>(now_us() / 1000) - last;
 }
 
-int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::string& pin, bool voice_focus,
-                       bool opus, bool usb) {
+int AudioEngine::start(bool voice_focus) {
     stop();  // clean state
 
-    usb_ = usb;
-    std::memset(&dest_, 0, sizeof dest_);
-    dest_.sin_family = AF_INET;
-    dest_.sin_port = htons(pc_port);
-    if (::inet_pton(AF_INET, usb ? "127.0.0.1" : pc_ip.c_str(), &dest_.sin_addr) != 1) {
-        LOGE("bad PC address: %s", pc_ip.c_str());
-        return kBadAddress;
-    }
-
-    // A fresh random session per start: the PC uses it to tell restarts apart,
-    // and (with a PIN) it salts the key so nonces never repeat across sessions.
+    // A fresh random session per start: the PC uses it to tell restarts apart.
     session_ = random_session();
     seq_ = 0;
     samples_sent_ = 0;
-    encrypt_ = !pin.empty();
-    if (encrypt_ && pm_derive_key(pin.data(), pin.size(), session_, key_) != 0) {
-        LOGE("key derivation failed (out of memory)");
-        return kCryptoError;
-    }
-
-    if (!usb_) {
-        socket_fd_ = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-        if (socket_fd_ < 0) {
-            LOGE("socket() failed: %s", strerror(errno));
-            return kSocketError;
-        }
-        // connect() fixes the peer: send() needs no address and recv() only
-        // accepts datagrams from the PC (nobody else can spoof STATUS replies).
-        if (::connect(socket_fd_, reinterpret_cast<sockaddr*>(&dest_), sizeof dest_) != 0) {
-            LOGE("connect() failed: %s", strerror(errno));
-            ::close(socket_fd_);
-            socket_fd_ = -1;
-            return kSocketError;
-        }
-    }
-    // USB: the TCP connection is (re)made by the sender thread, so a cable or
-    // PC app that isn't ready yet just shows as "connecting" until it is.
-    next_connect_ms_ = 0;
-    tcp_out_.clear();
-    tcp_in_.clear();
+    reset_link();
 
     voice_focus_ = voice_focus;
-    want_opus_ = opus;
     ring_write_.store(0);
     ring_read_.store(0);
     packets_sent_.store(0);
@@ -117,15 +78,11 @@ int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::st
     pc_last_ms_.store(0);
     pc_received_.store(0);
     pc_lost_.store(0);
-    last_errno_.store(0);
 
-    if (!open_stream()) {
-        if (socket_fd_ >= 0) ::close(socket_fd_);
-        socket_fd_ = -1;
-        return kAudioError;
-    }
-    // Opus runs at 48 kHz (Oboe resamples to that); fall back to PCM otherwise.
-    if (want_opus_ && sample_rate_.load() == PM_SAMPLE_RATE) {
+    if (!open_stream()) return kAudioError;
+    // Opus (~48 kbps, comfortably inside a Bluetooth link) runs at 48 kHz, which
+    // Oboe resamples to; fall back to PCM otherwise.
+    if (sample_rate_.load() == PM_SAMPLE_RATE) {
         int err = 0;
         opus_ = opus_encoder_create(PM_SAMPLE_RATE, 1, OPUS_APPLICATION_VOIP, &err);
         if (err == OPUS_OK && opus_) {
@@ -145,8 +102,7 @@ int AudioEngine::start(const std::string& pc_ip, uint16_t pc_port, const std::st
     start_us_ = now_us();
     running_.store(true);
     sender_ = std::thread([this] { sender_loop(); });
-    LOGI("streaming to %s:%u @ %d Hz, session %08x%s", pc_ip.c_str(), pc_port, sample_rate_.load(), session_,
-         encrypt_ ? ", encrypted" : "");
+    LOGI("capturing @ %d Hz, session %08x, %s", sample_rate_.load(), session_, opus_ ? "opus" : "pcm");
     return kOk;
 }
 
@@ -202,17 +158,13 @@ void AudioEngine::stop() {
         sem_post(&wake_);
         if (sender_.joinable()) sender_.join();
     }
+    out_cv_.notify_all();  // wake the Bluetooth writer: take_outgoing() returns -1
     close_stream();
-    if (socket_fd_ >= 0) {
-        ::close(socket_fd_);
-        socket_fd_ = -1;
-    }
     if (opus_) {
         opus_encoder_destroy(opus_);
         opus_ = nullptr;
     }
     opus_active_.store(false);
-    crypto_wipe(key_, sizeof key_);
     input_level_.store(0.0f);
     audio_session_.store(-1);
 }
@@ -270,8 +222,6 @@ void AudioEngine::sender_loop() {
             }
         }
 
-        if (usb_ && socket_fd_ < 0 && now_us() / 1000 >= next_connect_ms_) usb_connect();
-
         const size_t frame = static_cast<size_t>(sample_rate_.load() / 100);  // 10 ms
         if (frame_.size() != frame) frame_.assign(frame, 0);
         for (;;) {
@@ -282,8 +232,6 @@ void AudioEngine::sender_loop() {
             ring_read_.store(r + frame, std::memory_order_release);
             send_frame(frame_.data(), frame);
         }
-        if (usb_) usb_flush();
-        poll_status();
     }
 }
 
@@ -312,86 +260,48 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
         body = encoded_.data();
         bytes = static_cast<size_t>(len);
     }
-    size_t total;
-    if (encrypt_) {
-        h.flags = PM_FLAG_ENCRYPTED;
-        h.payload_len = static_cast<uint16_t>(bytes + PM_TAG_LEN);
-        pm_write_audio_header(packet_.data(), &h);  // header first: it is the AAD
-        pm_seal(key_, packet_.data(), PM_AUDIO_HEADER_LEN, session_, h.seq, h.timestamp_us, body, bytes,
-                packet_.data() + PM_AUDIO_HEADER_LEN);
-        total = PM_AUDIO_HEADER_LEN + h.payload_len;
-    } else {
-        const int r = pm_encode_audio(packet_.data(), packet_.size(), &h, body, bytes);
-        if (r < 0) return;
-        total = static_cast<size_t>(r);
-    }
-    transmit(packet_.data(), total);
+    const int r = pm_encode_audio(packet_.data() + PM_FRAME_PREFIX_LEN, packet_.size() - PM_FRAME_PREFIX_LEN, &h,
+                                  body, bytes);
+    if (r < 0) return;
+    pm_write_frame_prefix(packet_.data(), static_cast<size_t>(r));
+    queue(packet_.data(), PM_FRAME_PREFIX_LEN + static_cast<size_t>(r));
 }
 
-void AudioEngine::transmit(const uint8_t* packet, size_t len) {
-    if (socket_fd_ < 0) return;  // USB not connected (yet): the frame is dropped
-    if (!usb_) {
-        if (::send(socket_fd_, packet, len, MSG_DONTWAIT | MSG_NOSIGNAL) < 0) {
-            // Wi-Fi dropped / no route: keep capturing, report it, retry next frame.
-            last_errno_.store(errno, std::memory_order_relaxed);
-        } else {
-            last_errno_.store(0, std::memory_order_relaxed);
-            packets_sent_.fetch_add(1, std::memory_order_relaxed);
-        }
-        return;
+void AudioEngine::queue(const uint8_t* packet, size_t len) {
+    {
+        std::lock_guard<std::mutex> lk(out_mu_);
+        // Not connected, or the link stalled: keep only the newest frames.
+        while (out_.size() >= kMaxQueued) out_.pop_front();
+        out_.emplace_back(packet, packet + len);
     }
-    // TCP: never let a backlog build up (that would be pure added latency) —
-    // if ~170 ms of PCM is already queued, drop this frame instead.
-    if (tcp_out_.size() > 16 * 1024) return;
-    tcp_out_.push_back(static_cast<uint8_t>(len & 0xFF));
-    tcp_out_.push_back(static_cast<uint8_t>(len >> 8));
-    tcp_out_.insert(tcp_out_.end(), packet, packet + len);
+    out_cv_.notify_one();
     packets_sent_.fetch_add(1, std::memory_order_relaxed);
 }
 
-void AudioEngine::usb_connect() {
-    next_connect_ms_ = now_us() / 1000 + 1000;  // retry at most once a second
-    const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) {
-        last_errno_.store(errno, std::memory_order_relaxed);
-        return;
+int AudioEngine::take_outgoing(uint8_t* buf, size_t cap, int timeout_ms) {
+    std::unique_lock<std::mutex> lk(out_mu_);
+    out_cv_.wait_for(lk, std::chrono::milliseconds(timeout_ms), [&] { return !out_.empty() || !running_.load(); });
+    if (!running_.load()) return -1;
+    size_t n = 0;
+    while (!out_.empty() && n + out_.front().size() <= cap) {
+        std::memcpy(buf + n, out_.front().data(), out_.front().size());
+        n += out_.front().size();
+        out_.pop_front();
     }
-    // 127.0.0.1 on the phone is adb's own listener: connect() is immediate.
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&dest_), sizeof dest_) != 0) {
-        last_errno_.store(errno, std::memory_order_relaxed);
-        ::close(fd);
-        return;
-    }
-    int one = 1;
-    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
-    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
-    socket_fd_ = fd;
-    tcp_out_.clear();
-    tcp_in_.clear();
-    last_errno_.store(0, std::memory_order_relaxed);
-    LOGI("USB: connected through adb");
+    return static_cast<int>(n);
 }
 
-void AudioEngine::usb_disconnect(int err) {
-    if (socket_fd_ >= 0) ::close(socket_fd_);
-    socket_fd_ = -1;
-    tcp_out_.clear();  // a half-sent frame must not be continued on a new connection
-    tcp_in_.clear();
-    last_errno_.store(err, std::memory_order_relaxed);
-    next_connect_ms_ = now_us() / 1000 + 1000;
-}
-
-void AudioEngine::usb_flush() {
-    while (socket_fd_ >= 0 && !tcp_out_.empty()) {
-        const ssize_t n = ::send(socket_fd_, tcp_out_.data(), tcp_out_.size(), MSG_DONTWAIT | MSG_NOSIGNAL);
-        if (n > 0) {
-            tcp_out_.erase(tcp_out_.begin(), tcp_out_.begin() + n);
-        } else if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
-            break;  // socket buffer full: try again next wake
-        } else {
-            usb_disconnect(n < 0 ? errno : ECONNRESET);
-        }
+void AudioEngine::reset_link() {
+    {
+        std::lock_guard<std::mutex> lk(out_mu_);
+        out_.clear();
     }
+    {
+        std::lock_guard<std::mutex> lk(in_mu_);
+        in_.clear();
+    }
+    pc_state_.store(-1);
+    pc_last_ms_.store(0);
 }
 
 void AudioEngine::handle_status(const uint8_t* data, size_t len) {
@@ -405,39 +315,21 @@ void AudioEngine::handle_status(const uint8_t* data, size_t len) {
     pc_last_ms_.store(static_cast<int64_t>(now_us() / 1000), std::memory_order_relaxed);
 }
 
-void AudioEngine::poll_status() {
-    if (socket_fd_ < 0) return;
-    uint8_t buf[256];
-    for (;;) {
-        const ssize_t n = ::recv(socket_fd_, buf, sizeof buf, MSG_DONTWAIT);
-        if (!usb_) {
-            if (n <= 0) return;
-            handle_status(buf, static_cast<size_t>(n));
-            continue;
-        }
-        if (n == 0) {  // the PC (or adb) closed the connection
-            usb_disconnect(ECONNRESET);
+void AudioEngine::feed_incoming(const uint8_t* data, size_t len) {
+    std::lock_guard<std::mutex> lk(in_mu_);
+    in_.insert(in_.end(), data, data + len);
+    size_t pos = 0;
+    while (in_.size() - pos >= PM_FRAME_PREFIX_LEN) {
+        const size_t n = pm_r16(in_.data() + pos);
+        if (n == 0 || n > 512) {  // not a PhoneMic STATUS stream: resync from scratch
+            in_.clear();
             return;
         }
-        if (n < 0) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) usb_disconnect(errno);
-            return;
-        }
-        // Length-prefixed STATUS frames.
-        tcp_in_.insert(tcp_in_.end(), buf, buf + n);
-        size_t pos = 0;
-        while (tcp_in_.size() - pos >= 2) {
-            const size_t len = tcp_in_[pos] | (static_cast<size_t>(tcp_in_[pos + 1]) << 8);
-            if (len == 0 || len > 512) {
-                usb_disconnect(EPROTO);
-                return;
-            }
-            if (tcp_in_.size() - pos < 2 + len) break;
-            handle_status(tcp_in_.data() + pos + 2, len);
-            pos += 2 + len;
-        }
-        tcp_in_.erase(tcp_in_.begin(), tcp_in_.begin() + static_cast<std::ptrdiff_t>(pos));
+        if (in_.size() - pos < PM_FRAME_PREFIX_LEN + n) break;
+        handle_status(in_.data() + pos + PM_FRAME_PREFIX_LEN, n);
+        pos += PM_FRAME_PREFIX_LEN + n;
     }
+    in_.erase(in_.begin(), in_.begin() + static_cast<std::ptrdiff_t>(pos));
 }
 
 }  // namespace phonemic

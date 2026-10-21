@@ -1,5 +1,4 @@
-/* Compile the shared headers as strict C99 and do a minimal round trip. */
-#include <phonemic/crypto.h>
+/* Compile the shared header as strict C99 and do a minimal round trip. */
 #include <phonemic/wire.h>
 #include <stdio.h>
 

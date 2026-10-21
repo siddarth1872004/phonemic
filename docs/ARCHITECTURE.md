@@ -7,10 +7,13 @@
 2. **Realtime callbacks never block.** The Oboe callback and the sound-card
    callback only touch lock-free rings and atomics: no locks, no allocation,
    no syscalls (except a non-blocking `sem_post` on the phone).
-3. **One implementation of the protocol and crypto** (`shared/`), compiled by
-   both ends.
+3. **One implementation of the protocol** (`shared/`), compiled by both ends.
 4. **Latency is a requirement**, so every buffer is bounded and visible in the UI.
-5. **Few, justified dependencies**, fetched at pinned versions.
+5. **Few, justified dependencies**, fetched at pinned versions. The Android app
+   uses framework widgets only (no AndroidX or Material), and the desktop app
+   loads optional system libraries (libpulse, libdbus, Wayland) at run time.
+6. **Only the operating system's Bluetooth stack.** No Bluetooth driver, no
+   Wi-Fi or network code.
 
 ## Phone (Android)
 
@@ -19,22 +22,28 @@ Oboe input (AAudio, 48 kHz, I16, mono, low-latency)
   └─ onAudioReady [realtime]  → peak meter → SPSC ring (32k samples) → sem_post
 sender thread
   └─ 10 ms frames → [Opus encode, 48 kbps, FEC] → wire.h AUDIO packet
-     (media-clock timestamp, session id)
-     → [crypto.h seal] → send() on a UDP socket connect()ed to the PC
-  └─ non-blocking recv(): STATUS from the PC → atomics → UI / notification
+     (media-clock timestamp, session id) → [u16 len] frame
+     → bounded queue (20 frames, oldest dropped)
   └─ reopens the stream after onErrorAfterClose (headset, Bluetooth…)
 StreamingService (Kotlin, foreground, type=microphone)
-  └─ Wi-Fi low-latency lock, Android NoiseSuppressor/AEC/AGC, notification actions
-MainActivity (Kotlin): discovery, PIN, Voice Focus, start/stop/mute, status
+  └─ BluetoothSocket (RFCOMM, service UUID, paired PC) — Android exposes
+     RFCOMM to Java only, so Kotlin owns the socket:
+     writer thread: readOutgoing() → socket; reader thread: socket → feedIncoming()
+     → STATUS → atomics → UI / notification; reconnects every 2 s on failure
+  └─ Android NoiseSuppressor/AEC, notification actions
+MainActivity (Kotlin, framework widgets): paired-PC picker, Voice Focus,
+  start/stop/mute, status
 ```
 
 ## Desktop app
 
 ```
-UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) connection threads
-                   ▼                         ▼
+BluetoothServer: publishes the "PhoneMic" RFCOMM service through the OS stack
+  (BlueZ Profile1 over D-Bus · Winsock AF_BTH + WSASetService · IOBluetooth)
+  └─ one thread per connection: serve_stream() → FrameSplitter → packets
+                   ▼                         ▲ framed STATUS, 2 Hz
               Receiver::process_audio  (one mutex: the pipeline is single-threaded)
-                decode (wire.h) → sender lock → auth policy → decrypt (crypto.h)
+                decode (wire.h) → sender lock (one phone at a time)
                 → JitterBuffer::pop_ready (reorder ≤2, detect loss)
                 → Opus decode (FEC from the next packet on loss)  or
                   PCM16 → float → Resampler (any rate → 48 kHz) → Concealer
@@ -51,8 +60,10 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
 
 | Component | File |
 |---|---|
-| Protocol, crypto | `shared/include/phonemic/{wire,crypto}.h` |
-| Receive pipeline, sender lock, STATUS, discovery replies | `pc-app/core/src/receiver.cpp` |
+| Protocol | `shared/include/phonemic/wire.h` |
+| Bluetooth service, framing, per-connection pump | `pc-app/core/src/bluetooth.cpp` |
+| Bluetooth per OS | `bluetooth_linux.cpp` (BlueZ, libdbus loaded at run time), `bluetooth_win.cpp`, `bluetooth_mac.mm` |
+| Receive pipeline, sender lock, STATUS | `pc-app/core/src/receiver.cpp` |
 | Jitter buffer | `pc-app/core/src/jitter_buffer.cpp` |
 | Adaptive playout (drift compensation) | `pc-app/core/src/playout.cpp` |
 | Resampler, concealment, gain/limiter | `pc-app/core/src/dsp.cpp` |
@@ -61,8 +72,7 @@ UDP socket thread ─┐                         ┌─ WebServer (mbedTLS) conn
 | Audio devices (miniaudio) | `pc-app/core/src/audio_out.cpp` |
 | Virtual microphone per OS, driver installers | `pc-app/core/src/virtual_mic.cpp` |
 | Linux sound-server control (libpulse, loaded at run time) | `pc-app/core/src/pulse_ctl.cpp` |
-| Browser mic: HTTPS, WebSocket, certificate, QR | `pc-app/core/src/web_server.cpp`, `websocket.cpp` |
-| Settings, sockets, utilities | `settings.cpp`, `net.cpp`, `util.cpp` |
+| Settings, helper processes, utilities | `settings.cpp`, `process.cpp`, `util.cpp` |
 | Window | `pc-app/gui/{main,app,ui}.cpp` |
 | Windows driver (ACX) + its ring and feeder | `pc-app/driver/`, `pc-app/ipc/` |
 | macOS driver (Core Audio plug-in) | `pc-app/driver-macos/` |
@@ -89,14 +99,21 @@ drop-in, or a marked `.nofail` block in `~/.config/pulse/default.pa`).
   added latency); a gap is declared lost only once 2 later packets arrived.
 - **Adaptive playout:** the only intentional latency (the "buffer" setting,
   default 40 ms). Its read rate is steered by ≤ 0.4 % to hold the target fill,
-  which absorbs both network jitter and phone/PC clock drift. It hard-resyncs if
+  which absorbs both Bluetooth jitter and phone/PC clock drift. It hard-resyncs if
   the fill exceeds 2 × target + 60 ms.
 
-## Transports
+## Transport
 
-| Transport | Status |
-|---|---|
-| Wi-Fi UDP (native app) | ✅ |
-| WebSocket over TLS (any browser) | ✅ built into the app |
-| USB cable (TCP via `adb reverse`, length-prefixed) | ✅ `pc-app/core/src/usb.cpp`; the app keeps `adb reverse` set up |
-| Bluetooth RFCOMM | not planned: RFCOMM adds latency and stutters under load, and Wi-Fi plus USB already cover "no network" and "bad network" |
+Bluetooth RFCOMM only, through each operating system's own stack, so no driver
+is installed for it. The phone connects to the paired PC by service UUID
+(`PM_SERVICE_UUID`); the PC publishes the service record. Pairing
+authenticates the phone and the link is encrypted by Bluetooth, so PhoneMic
+adds no crypto of its own.
+
+The phone does not present itself as a Bluetooth headset (HFP/HSP): Android
+apps cannot take that role, and headset audio is 16 kHz at best. The audio
+reaches apps through the PhoneMic Microphone above instead.
+
+At about 48 kbps, Opus fits comfortably in a classic Bluetooth link. The
+phone keeps at most 20 frames (200 ms) queued and drops the oldest when the
+link stalls, so latency stays bounded instead of growing.

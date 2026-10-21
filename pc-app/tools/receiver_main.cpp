@@ -1,10 +1,9 @@
 // phonemic-receiver — the PhoneMic receive pipeline without a window.
 //
-// Same engine as the desktop app (Voice Focus, voice changer, virtual mic,
-// browser mic), for headless boxes, scripting and latency measurement.
+// Same engine as the desktop app (Bluetooth link, Voice Focus, voice changer,
+// virtual mic), for headless boxes and scripting.
 #include <atomic>
 #include <cctype>
-#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -12,18 +11,13 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 #include <algorithm>
 
 #include "phonemic/audio_out.hpp"
-#include "phonemic/net.hpp"
+#include "phonemic/bluetooth.hpp"
 #include "phonemic/receiver.hpp"
-#include "phonemic/usb.hpp"
 #include "phonemic/util.hpp"
 #include "phonemic/virtual_mic.hpp"
-#ifdef PHONEMIC_HAVE_WEB
-#include "phonemic/web_server.hpp"
-#endif
 #ifdef _WIN32
 #include "driver_feed.hpp"
 #endif
@@ -41,8 +35,6 @@ struct NullSink : AudioSinkIface {
 void usage() {
     std::puts(
         "usage: phonemic-receiver [options]\n"
-        "  --port N            UDP port (default 4010, or $PHONEMIC_PORT)\n"
-        "  --pin TEXT          require this PIN/passphrase (encrypted audio only)\n"
         "  --no-focus          disable Voice Focus noise removal\n"
         "  --effect NAME       normal|deep|chipmunk|robot|radio|echo\n"
         "  --gain DB           output gain in dB (-40..24, limiter prevents clipping)\n"
@@ -52,10 +44,6 @@ void usage() {
         "  --list-devices      list output devices and exit\n"
         "  --no-virtual-mic    don't create/use the virtual microphone\n"
         "  --null              discard audio (no sound device; for testing)\n"
-        "  --web [PORT]        also serve the browser mic (HTTPS, default port 8443)\n"
-        "  --usb               accept a phone on a USB cable (runs adb reverse)\n"
-        "  --measure [N]       print one-way latency stats for N packets (use with\n"
-        "                      phonemic-softphone --wallclock on the same machine)\n"
 #ifdef _WIN32
         "  --driver            require the PhoneMic driver (default: use it if installed)\n"
 #endif
@@ -79,15 +67,11 @@ Effect parse_effect(const std::string& s) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    uint16_t port = 4010;
-    if (const char* e = std::getenv("PHONEMIC_PORT")) port = static_cast<uint16_t>(std::atoi(e));
-    std::string pin, device, monitor;
-    bool focus = true, list = false, use_vmic = true, null_out = false, web = false, driver = false, usb = false;
-    uint16_t web_port = 8443;
+    std::string device, monitor;
+    bool focus = true, list = false, use_vmic = true, null_out = false, driver = false;
     int latency = 40;
     float gain = 0;
     Effect effect = Effect::None;
-    long measure = 0;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -95,10 +79,7 @@ int main(int argc, char** argv) {
             if (i + 1 >= argc) { std::fprintf(stderr, "%s needs a value\n", a.c_str()); std::exit(2); }
             return argv[++i];
         };
-        auto has_num_next = [&] { return i + 1 < argc && argv[i + 1][0] >= '0' && argv[i + 1][0] <= '9'; };
-        if (a == "--port") port = static_cast<uint16_t>(std::stoi(next()));
-        else if (a == "--pin") pin = next();
-        else if (a == "--no-focus") focus = false;
+        if (a == "--no-focus") focus = false;
         else if (a == "--effect") effect = parse_effect(next());
         else if (a == "--gain") gain = std::stof(next());
         else if (a == "--latency") latency = std::stoi(next());
@@ -107,10 +88,7 @@ int main(int argc, char** argv) {
         else if (a == "--list-devices") list = true;
         else if (a == "--no-virtual-mic") use_vmic = false;
         else if (a == "--null") null_out = true;
-        else if (a == "--web") { web = true; if (has_num_next()) web_port = static_cast<uint16_t>(std::stoi(next())); }
-        else if (a == "--measure") { measure = 300; if (has_num_next()) measure = std::stol(next()); }
         else if (a == "--driver") driver = true;
-        else if (a == "--usb") usb = true;
         else if (a == "--version") { std::puts("phonemic-receiver " PHONEMIC_VERSION); return 0; }
         else if (a == "--make-default") {
             EventLog l(20, true);
@@ -155,7 +133,6 @@ int main(int argc, char** argv) {
     if (use_vmic && !null_out) vmic = setup_virtual_mic(&log);
 
     Receiver rx(&log);
-    rx.set_passphrase(pin);
     rx.set_voice_focus(focus);
     rx.set_effect(effect);
     rx.set_gain_db(gain);
@@ -165,7 +142,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<AudioSinkIface> driver_sink;
     std::string err;
     std::string out_name = "nothing (--null)";
-    if (driver || (device.empty() && !null_out && !measure && vmic.direct_feed)) {
+    if (driver || (device.empty() && !null_out && vmic.direct_feed)) {
 #ifdef _WIN32
         auto f = DriverFeed::open(&err);
         if (!f) { std::fprintf(stderr, "PhoneMic driver: %s\n", err.c_str()); return 1; }
@@ -177,7 +154,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "--driver is Windows-only\n");
         return 2;
 #endif
-    } else if (null_out || measure) {
+    } else if (null_out) {
         rx.set_mic_sink(&null_sink);
     } else {
         const std::string want = !device.empty() ? device : (vmic.ready ? vmic.playback_match : "");
@@ -203,53 +180,14 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::vector<double> lat_ms;
-    if (measure) {
-        lat_ms.reserve(static_cast<size_t>(measure));
-        rx.set_packet_observer([&](const pm_audio_header& h, uint64_t arrival) {
-            if (static_cast<long>(lat_ms.size()) < measure && arrival >= h.timestamp_us)
-                lat_ms.push_back(static_cast<double>(arrival - h.timestamp_us) / 1000.0);
-        });
-    }
-
-    if (!rx.start(port, &err)) {
-        std::fprintf(stderr, "%s\n(Is another PhoneMic already running? Try --port.)\n", err.c_str());
-        return 1;
-    }
-
-    UsbIngest usb_in(&rx, &log);
-    AdbBridge adb(&log);
-    if (usb) {
-        if (!usb_in.start(port, &err)) std::fprintf(stderr, "USB: %s\n", err.c_str());
-        adb.start(port);
-    }
-
-#ifdef PHONEMIC_HAVE_WEB
-    WebServer webserver(&rx, &log);
-    std::string token;
-    if (web) {
-        token = random_token(8);
-        if (!webserver.start(web_port, token, &err)) std::fprintf(stderr, "browser mic: %s\n", err.c_str());
-    }
-#else
-    if (web) std::fprintf(stderr, "this build has no browser-mic support\n");
-#endif
+    BluetoothServer bt(&rx, &log);
+    bt.start();
 
     std::printf("=====================================================\n");
     std::printf(" PhoneMic receiver %s — ready\n", PHONEMIC_VERSION);
     std::printf("=====================================================\n");
-    std::printf(" On your phone, tap \"Find PC\" or enter one of:\n");
-    for (const auto& a : net::local_addresses())
-        std::printf("     %-16s (%s)%s\n", a.ip.c_str(), a.interface_name.c_str(), a.primary ? "  <- likely" : "");
-    std::printf(" port %u%s\n", rx.port(), pin.empty() ? "" : "   (PIN required)");
-#ifdef PHONEMIC_HAVE_WEB
-    if (web && webserver.running()) {
-        const auto addrs = net::local_addresses();
-        std::printf(" Browser mic: %s\n",
-                    WebServer::url_for(addrs.empty() ? "<pc-ip>" : addrs[0].ip, web_port, token).c_str());
-    }
-#endif
-    if (usb) std::printf(" USB: plug the phone in (USB debugging on), enable \"USB cable\" in the app\n");
+    std::printf(" Pair the phone with this PC in Bluetooth settings, then\n");
+    std::printf(" pick this PC in the PhoneMic app and tap Start.\n");
     std::printf(" Audio -> %s\n", out_name.c_str());
     if (vmic.ready) std::printf(" In Discord/Zoom/OBS pick the microphone: \"%s\"\n", vmic.mic_name.c_str());
     else if (!vmic.help.empty()) std::printf(" Note: %s\n", vmic.help.c_str());
@@ -259,7 +197,6 @@ int main(int argc, char** argv) {
     uint64_t last_print = mono_ms();
     while (!g_quit.load()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        if (measure && static_cast<long>(lat_ms.size()) >= measure) break;
         if (mono_ms() - last_print >= 5000) {
             last_print = mono_ms();
             const auto s = rx.snapshot();
@@ -271,24 +208,7 @@ int main(int argc, char** argv) {
             }
         }
     }
-    adb.stop();
-    usb_in.stop();
-    rx.stop();
+    bt.stop();
     teardown_virtual_mic();
-
-    if (measure && !lat_ms.empty()) {
-        std::sort(lat_ms.begin(), lat_ms.end());
-        double mean = 0;
-        for (double v : lat_ms) mean += v;
-        mean /= static_cast<double>(lat_ms.size());
-        double var = 0;
-        for (double v : lat_ms) var += (v - mean) * (v - mean);
-        auto pct = [&](double p) { return lat_ms[static_cast<size_t>((lat_ms.size() - 1) * p)]; };
-        std::printf("measured %zu packets\none-way latency (ms): min %.3f  median %.3f  p95 %.3f  max %.3f\n",
-                    lat_ms.size(), lat_ms.front(), pct(0.5), pct(0.95), lat_ms.back());
-        std::printf("  mean %.3f  jitter (stddev) %.3f\n", mean, std::sqrt(var / lat_ms.size()));
-        std::printf("note: transport/software latency only; add the playout buffer (%d ms) and,\n"
-                    "with a real phone, capture + Wi-Fi time.\n", latency);
-    }
     return 0;
 }

@@ -20,7 +20,7 @@ namespace {
 
 void glfw_error(int code, const char* msg) { std::fprintf(stderr, "GLFW error %d: %s\n", code, msg); }
 
-// A 64x64 window icon drawn procedurally (blue disc, white microphone).
+// A 64x64 window icon drawn procedurally (accent disc, black microphone).
 std::vector<unsigned char> make_icon(int n) {
     std::vector<unsigned char> px(static_cast<size_t>(n) * n * 4, 0);
     const float c = n / 2.0f, r = n / 2.0f - 1;
@@ -31,21 +31,21 @@ std::vector<unsigned char> make_icon(int n) {
             const float d = std::sqrt(dx * dx + dy * dy);
             if (d > r) continue;
             const float a = std::min(1.0f, r - d);
-            bool white = false;
+            bool glyph = false;
             // Capsule.
             const float cw = n * 0.11f, top = c - n * 0.28f, bot = c + n * 0.06f;
-            if (std::fabs(dx) <= cw && dy + c >= top + cw && dy + c <= bot) white = true;
+            if (std::fabs(dx) <= cw && dy + c >= top + cw && dy + c <= bot) glyph = true;
             for (float cy : {top + cw, bot}) {
                 const float ex = dx, ey = dy + c - cy;
-                if (ex * ex + ey * ey <= cw * cw) white = true;
+                if (ex * ex + ey * ey <= cw * cw) glyph = true;
             }
             // Holder arc + stem.
             const float ad = std::sqrt(dx * dx + (dy + n * 0.02f) * (dy + n * 0.02f));
-            if (dy > -n * 0.02f && std::fabs(ad - n * 0.19f) < n * 0.03f) white = true;
-            if (std::fabs(dx) < n * 0.03f && dy > n * 0.17f && dy < n * 0.29f) white = true;
-            p[0] = white ? 255 : 0x4C;
-            p[1] = white ? 255 : 0x8B;
-            p[2] = 255;
+            if (dy > -n * 0.02f && std::fabs(ad - n * 0.19f) < n * 0.03f) glyph = true;
+            if (std::fabs(dx) < n * 0.03f && dy > n * 0.17f && dy < n * 0.29f) glyph = true;
+            p[0] = glyph ? 0 : 0x7A;
+            p[1] = glyph ? 0 : 0x8C;
+            p[2] = glyph ? 0 : 0xFF;
             p[3] = static_cast<unsigned char>(255 * a);
         }
     }
@@ -121,7 +121,6 @@ int main(int, char**) {
 
     {
         phonemic::App app;
-        ui.port_edit = app.settings.port;
         while (!glfwWindowShouldClose(win)) {
             // Sleep until input arrives or ~33 ms pass (keeps the meter live at
             // ~30 fps without burning a CPU core).
@@ -137,7 +136,7 @@ int main(int, char**) {
             int w, h;
             glfwGetFramebufferSize(win, &w, &h);
             glViewport(0, 0, w, h);
-            glClearColor(0x14 / 255.f, 0x16 / 255.f, 0x1B / 255.f, 1);
+            glClearColor(0, 0, 0, 1);  // OLED black
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
             glfwSwapBuffers(win);

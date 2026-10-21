@@ -13,8 +13,8 @@ android {
         applicationId = "com.phonemic"
         minSdk = 29          // Android 10: reliable low-latency AAudio via Oboe
         targetSdk = 34
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 5
+        versionName = "0.4.0"
 
         // 64-bit ABIs (all current phones) plus x86_64 for the emulator.
         ndk {
@@ -68,11 +68,7 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    // Material 3 components for the UI (cards, switches, buttons, meter).
-    implementation("com.google.android.material:material:1.12.0")
-
+    // The UI is framework widgets only (no AndroidX / Material): a small APK.
     // Oboe: low-latency audio (AAudio/OpenSL ES). The audio hot path lives in
     // C++ against this; Kotlin never touches an audio buffer (principle #1).
     implementation("com.google.oboe:oboe:1.9.0")
