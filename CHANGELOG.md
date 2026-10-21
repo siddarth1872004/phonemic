@@ -6,15 +6,17 @@ Full notes: [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md).
 
 ### Changed
 - Bluetooth only: the phone streams to the paired PC over RFCOMM through the
-  operating system's own Bluetooth stack (BlueZ over D-Bus, Winsock AF_BTH,
-  IOBluetooth). No Bluetooth driver is installed. The audio still reaches apps
+  operating system's own Bluetooth stack (BlueZ over D-Bus, Winsock AF_BTH).
+  No Bluetooth driver is installed. The audio still reaches apps
   as "PhoneMic Microphone".
 - True-black (OLED) design on the phone and the PC, with a shared palette.
 - Android: framework widgets only (AndroidX and Material removed); the PC is
   chosen from the phone's paired devices.
-- Release builds drop unused code and symbols (`--gc-sections`, `-dead_strip`).
+- Release builds drop unused code and symbols (`--gc-sections`, `-s`).
 
 ### Removed
+- macOS support: the macOS app, the `PhoneMic.driver` Core Audio plug-in and
+  the macOS build. PhoneMic now runs on Windows and Linux.
 - Wi-Fi UDP streaming and LAN discovery, the browser microphone (HTTPS,
   WebSocket, QR code), USB cable mode, PIN encryption (Bluetooth pairing and
   link encryption replace it), `phonemic-softphone`, and the monocypher,

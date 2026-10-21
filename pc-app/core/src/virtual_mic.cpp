@@ -25,11 +25,6 @@
 
 #include "driver_feed.hpp"
 #endif
-#ifdef __APPLE__
-#include <mach-o/dyld.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 namespace phonemic {
 
@@ -410,88 +405,6 @@ void install_driver_async(const VirtualMic& vm, std::function<void(bool, std::st
             done(true, "PhoneMic driver installed. Restart Windows to finish (test mode was just enabled).");
         else
             done(false, "Setup failed or was cancelled (see the PowerShell window for the reason).");
-    }).detach();
-}
-
-#elif defined(__APPLE__)
-
-namespace {
-std::string exe_dir() {
-    char buf[4096];
-    uint32_t size = sizeof buf;
-    if (_NSGetExecutablePath(buf, &size) != 0) return {};
-    std::string p(buf);
-    const auto slash = p.rfind('/');
-    return slash == std::string::npos ? std::string() : p.substr(0, slash);
-}
-
-bool is_dir(const std::string& p) {
-    struct stat st {};
-    return ::stat(p.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
-}
-
-// PhoneMic.app/Contents/Resources/PhoneMic.driver (the build copies it there),
-// or PhoneMic.driver next to a bare binary.
-std::string find_driver_package() {
-    const std::string dir = exe_dir();
-    for (const std::string& p : {dir + "/../Resources/PhoneMic.driver", dir + "/PhoneMic.driver"}) {
-        const auto slash = p.rfind('/');
-        if (is_dir(p) && ::access((p.substr(0, slash) + "/install-driver.sh").c_str(), R_OK) == 0) return p;
-    }
-    return {};
-}
-}  // namespace
-
-VirtualMic setup_virtual_mic(EventLog* log) {
-    VirtualMic vm;
-    vm.driver_package = find_driver_package();
-    const auto devices = AudioSystem::get().playback_devices();
-    for (const auto& d : devices) {
-        if (icontains(d.name, "PhoneMic Microphone")) {
-            vm.ready = true;
-            vm.via = "PhoneMic driver";
-            vm.playback_match = "PhoneMic Microphone";
-            vm.mic_name = "PhoneMic Microphone";
-            if (log) log->add("Virtual microphone ready: PhoneMic driver");
-            return vm;
-        }
-    }
-    vm.help = vm.driver_package.empty()
-                  ? "This build doesn't include PhoneMic.driver. Build it (cmake builds it on macOS) or use "
-                    "the release download."
-                  : "Install the PhoneMic driver (button below; asks for your password) so every app can use "
-                    "your phone as a microphone.";
-    return vm;
-}
-
-void teardown_virtual_mic() {}
-
-void install_driver_async(const VirtualMic& vm, std::function<void(bool, std::string)> done) {
-    const std::string pkg = vm.driver_package;
-    std::thread([pkg, done = std::move(done)] {
-        if (pkg.empty()) {
-            done(false, "Setup failed: PhoneMic.driver isn't bundled with this build.");
-            return;
-        }
-        const std::string script = pkg.substr(0, pkg.rfind('/')) + "/install-driver.sh";
-        // macOS shows its own administrator prompt. Paths go in as arguments
-        // (quoted form), never spliced into the script text.
-        const ProcessResult r = run_process(
-            {"/usr/bin/osascript", "-e", "on run argv",
-             "-e",
-             "do shell script \"/bin/sh \" & quoted form of (item 1 of argv) & \" \" & "
-             "quoted form of (item 2 of argv) with administrator privileges",
-             "-e", "end run", script, pkg},
-            180000);
-        if (r.started && r.exit_code == 0) {
-            // coreaudiod restarts and loads the plug-in: give it a moment.
-            std::this_thread::sleep_for(std::chrono::seconds(2));
-            done(true, "PhoneMic driver installed.");
-        } else if (r.output.find("-128") != std::string::npos) {
-            done(false, "Setup failed: cancelled.");
-        } else {
-            done(false, "Setup failed: " + (r.output.empty() ? std::string("osascript did not run") : r.output));
-        }
     }).detach();
 }
 

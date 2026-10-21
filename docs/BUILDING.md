@@ -20,7 +20,6 @@ Binaries land in `build/bin/` (`build/bin/Release/` with Visual Studio):
 | `phonemic-receiver` | the same engine without a window (servers, scripting, `--measure`) |
 | `phonemic-vmic-check` | plays a tone into the virtual mic and checks it comes back (`--setup` uses the app's own detection; `--default` records the system default microphone) |
 | `phonemic-driver.exe` | Windows: creates the driver's device and installs it (used by `install-driver.ps1`) |
-| `PhoneMic.driver` | macOS: the virtual-mic plug-in (also copied into `PhoneMic.app`) |
 | `phonemic-tests` | the test suite |
 
 ### Windows
@@ -57,12 +56,6 @@ packaging/linux/build-appimage.sh "$PWD/stage" ./appimagetool     # AppImage (ne
 ```
 `PHONEMIC_PORTABLE` links libstdc++/libgcc statically. Distros without glibc
 (Alpine, musl) build from source.
-
-### macOS
-Xcode command-line tools + CMake. Bluetooth uses the system IOBluetooth
-framework. The build also produces `PhoneMic.driver`
-(the virtual microphone) and bundles it into `PhoneMic.app`. For a universal
-build add `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 
 ### Build options
 

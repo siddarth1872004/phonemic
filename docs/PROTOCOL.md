@@ -10,8 +10,7 @@ document and the header disagree, the header wins.
   publishes an SDP record with service UUID
   **`51f009ff-63ac-465d-a8c5-a9a56f7355ea`** (`PM_SERVICE_UUID`), named
   "PhoneMic"; the phone connects by that UUID, so the channel number never
-  matters. Only the OS Bluetooth stacks are used (Android, BlueZ, Windows,
-  IOBluetooth).
+  matters. Only the OS Bluetooth stacks are used (Android, BlueZ, Windows).
 - RFCOMM is a byte stream, so every packet is sent as a **frame**: its length
   as a little-endian u16, then the packet: `[len][packet]`. The PC replies with
   framed STATUS packets on the same connection.

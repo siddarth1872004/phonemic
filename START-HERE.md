@@ -14,8 +14,6 @@ You set this up **once**. After that: open PhoneMic on the PC, tap **Start** on 
 - **Linux (any distro):** download `PhoneMic-x86_64.AppImage` from Releases, make it
   executable (right-click → Properties → *Allow executing*, or `chmod +x`) and run it.
   Debian/Ubuntu: install the `.deb`; Fedora/openSUSE: install the `.rpm`.
-- **Mac:** download `PhoneMic-macos.zip`, unzip, and open `PhoneMic.app`
-  (the first time: right-click → **Open**, and allow Bluetooth when asked).
 
 ### 2. Make it a real microphone
 PhoneMic brings its own microphone driver; nothing else to download. (This is
@@ -27,7 +25,6 @@ the one your PC already has.)
   says so.
 - **Linux:** nothing to do; PhoneMic creates "PhoneMic Microphone" automatically.
   Tick **Keep it when PhoneMic is closed** so apps you opened earlier see it too.
-- **Mac:** click **Install PhoneMic driver** and enter your password.
 
 ### 3. Put the app on your phone
 - **Android:** install `PhoneMic.apk` from Releases (allow "install unknown apps" when asked).

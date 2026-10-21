@@ -221,36 +221,6 @@ jobs:
             build/bin/Release/phonemic-vmic-check.exe
             build/bin/Release/phonemic-driver.exe
 
-  macos:
-    name: macOS (build + tests + virtual mic)
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
-      - name: Build
-        run: cmake --build build --parallel
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-      - name: Install PhoneMic.driver
-        run: |
-          sudo sh build/bin/PhoneMic.app/Contents/Resources/install-driver.sh build/bin/PhoneMic.app/Contents/Resources/PhoneMic.driver
-          sleep 5
-      - name: Virtual microphone works (PhoneMic.driver)
-        run: |
-          build/bin/phonemic-vmic-check --setup
-          build/bin/phonemic-vmic-check --setup --default
-      - name: Package
-        run: |
-          mkdir -p dist
-          ditto build/bin/PhoneMic.app dist/PhoneMic.app
-          cp build/bin/phonemic-receiver build/bin/phonemic-vmic-check dist/
-          ditto -c -k --keepParent dist PhoneMic-macos.zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: PhoneMic-macos
-          path: PhoneMic-macos.zip
-
   driver:
     name: Windows driver (WDK)
     runs-on: windows-2022
@@ -394,7 +364,7 @@ jobs:
   release:
     name: Attach binaries to the GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, sanitizers, linux-distros, windows-package, macos, android]
+    needs: [linux, sanitizers, linux-distros, windows-package, android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -411,6 +381,5 @@ jobs:
           # failed unless someone had created it by hand first).
           files: |
             artifacts/PhoneMic-windows/PhoneMic-windows-x64.zip
-            artifacts/PhoneMic-macos/PhoneMic-macos.zip
             artifacts/PhoneMic-linux/*
             artifacts/PhoneMic-android/PhoneMic.apk

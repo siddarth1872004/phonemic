@@ -6,8 +6,8 @@
 //
 //   phonemic-vmic-check --setup          use the app's own virtual-mic setup
 //                                        (Linux: creates the PulseAudio/PipeWire
-//                                        devices; macOS: finds PhoneMic.driver;
-//                                        Windows: feeds the PhoneMic driver)
+//                                        devices; Windows: feeds the PhoneMic
+//                                        driver)
 //   phonemic-vmic-check --setup --default
 //                                        also make PhoneMic the system's default
 //                                        microphone and record from *the default*
@@ -15,8 +15,8 @@
 //   phonemic-vmic-check [--play NAME] [--capture NAME] [--seconds 3] [--list]
 //
 // Names match exactly, else as a substring. CI runs it on Linux (PulseAudio and
-// PipeWire) and on macOS after installing PhoneMic.driver. On Windows, run it
-// after installing the driver to check the whole path.
+// PipeWire). On Windows, run it after installing the driver to check the whole
+// path.
 #include <algorithm>
 #include <atomic>
 #include <chrono>

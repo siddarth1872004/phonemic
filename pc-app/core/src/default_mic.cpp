@@ -7,8 +7,6 @@
 #include <thread>
 
 #include "phonemic/pulse_ctl.hpp"
-#elif defined(__APPLE__)
-#include <CoreAudio/CoreAudio.h>
 #elif defined(_WIN32)
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -56,52 +54,6 @@ bool make_default_mic(const VirtualMic& vm, std::string* err) {
     }
     if (err) *err = "the sound server didn't switch to it";
     return false;
-}
-
-#elif defined(__APPLE__)
-
-namespace {
-// kAudioObjectPropertyElementMain (named so from macOS 12; we support 11).
-constexpr AudioObjectPropertyElement kElementMain = 0;
-
-// kDeviceUID in pc-app/driver-macos/PhoneMicAudio.c.
-AudioObjectID phonemic_device() {
-    CFStringRef uid = CFSTR("PhoneMicLoopback_UID");
-    AudioObjectID dev = kAudioObjectUnknown;
-    AudioObjectPropertyAddress a = {kAudioHardwarePropertyTranslateUIDToDevice, kAudioObjectPropertyScopeGlobal,
-                                    kElementMain};
-    UInt32 size = sizeof dev;
-    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &a, sizeof uid, &uid, &size, &dev) != noErr)
-        return kAudioObjectUnknown;
-    return dev;
-}
-
-const AudioObjectPropertyAddress kDefaultInput = {kAudioHardwarePropertyDefaultInputDevice,
-                                                  kAudioObjectPropertyScopeGlobal, kElementMain};
-}  // namespace
-
-DefaultMicState default_mic_state(const VirtualMic&) {
-    const AudioObjectID ours = phonemic_device();
-    if (ours == kAudioObjectUnknown) return DefaultMicState::Unknown;
-    AudioObjectID current = kAudioObjectUnknown;
-    UInt32 size = sizeof current;
-    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &kDefaultInput, 0, nullptr, &size, &current) != noErr)
-        return DefaultMicState::Unknown;
-    return current == ours ? DefaultMicState::Yes : DefaultMicState::No;
-}
-
-bool make_default_mic(const VirtualMic&, std::string* err) {
-    AudioObjectID ours = phonemic_device();
-    if (ours == kAudioObjectUnknown) {
-        if (err) *err = "the PhoneMic driver isn't loaded";
-        return false;
-    }
-    if (AudioObjectSetPropertyData(kAudioObjectSystemObject, &kDefaultInput, 0, nullptr, sizeof ours, &ours) !=
-        noErr) {
-        if (err) *err = "Core Audio refused";
-        return false;
-    }
-    return true;
 }
 
 #elif defined(_WIN32)

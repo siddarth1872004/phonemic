@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# PhoneMic — run the desktop app on Linux/macOS, building it the first time.
+# PhoneMic — run the desktop app on Linux, building it the first time.
 set -e
 cd "$(dirname "$0")"
 BIN=build/bin/PhoneMic

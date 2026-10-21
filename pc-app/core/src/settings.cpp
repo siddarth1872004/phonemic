@@ -18,8 +18,6 @@ fs::path config_dir() {
     fs::path base;
 #if defined(_WIN32)
     if (const char* a = std::getenv("APPDATA")) base = fs::path(a) / "PhoneMic";
-#elif defined(__APPLE__)
-    if (const char* h = std::getenv("HOME")) base = fs::path(h) / "Library/Application Support/PhoneMic";
 #else
     if (const char* x = std::getenv("XDG_CONFIG_HOME"); x && *x) base = fs::path(x) / "phonemic";
     else if (const char* h = std::getenv("HOME")) base = fs::path(h) / ".config/phonemic";

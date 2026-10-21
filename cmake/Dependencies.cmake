@@ -1,7 +1,7 @@
 # Third-party dependencies, fetched at configure time and pinned to exact tags /
 # commits so builds are reproducible. Each one is small and has a reason:
 #
-#   miniaudio  — audio output on WASAPI / PulseAudio / ALSA / CoreAudio, with
+#   miniaudio  — audio output on WASAPI / PulseAudio / ALSA, with
 #                built-in sample-rate + channel conversion (single header).
 #   imgui+glfw — the native desktop window (no web view, no Electron).
 #   opus       — compression + loss concealment over the Bluetooth link.
@@ -23,11 +23,8 @@ endmacro()
 phonemic_fetch(miniaudio https://github.com/mackron/miniaudio.git 0.11.21)
 add_library(miniaudio INTERFACE)
 target_include_directories(miniaudio SYSTEM INTERFACE ${miniaudio_SOURCE_DIR})
-if(UNIX AND NOT APPLE)
+if(UNIX)
   target_link_libraries(miniaudio INTERFACE ${CMAKE_DL_LIBS} pthread m)
-endif()
-if(APPLE)
-  target_link_libraries(miniaudio INTERFACE "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
 endif()
 
 # ---- opus --------------------------------------------------------------------

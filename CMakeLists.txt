@@ -9,16 +9,7 @@
 # and, on Linux, the X11/GL headers for the window (see docs/BUILDING.md).
 cmake_minimum_required(VERSION 3.21)
 
-# macOS: run on 11 (Big Sur) and later, not only on the build machine's version.
-# Must be set before project().
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-
 project(PhoneMic VERSION 0.4.0 LANGUAGES C CXX)
-if(APPLE)
-  # OBJCXX for IOBluetooth (pc-app/core/src/bluetooth_mac.mm). OBJC too, or CMake
-  # compiles GLFW's .m files as Objective-C++, which rejects them.
-  enable_language(OBJC OBJCXX)
-endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,11 +41,7 @@ endif()
 # Release defaults, /Gy + /OPT:REF + /OPT:ICF, already do this).
 if(NOT MSVC)
   add_compile_options($<$<CONFIG:Release,MinSizeRel>:-ffunction-sections> $<$<CONFIG:Release,MinSizeRel>:-fdata-sections>)
-  if(APPLE)
-    add_link_options($<$<CONFIG:Release,MinSizeRel>:-Wl,-dead_strip>)
-  else()
-    add_link_options($<$<CONFIG:Release,MinSizeRel>:-Wl,--gc-sections> $<$<CONFIG:Release,MinSizeRel>:-s>)
-  endif()
+  add_link_options($<$<CONFIG:Release,MinSizeRel>:-Wl,--gc-sections> $<$<CONFIG:Release,MinSizeRel>:-s>)
 endif()
 
 include(cmake/Dependencies.cmake)

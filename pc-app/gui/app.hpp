@@ -37,7 +37,7 @@ public:
     void select_monitor_device(const std::string& name);  // "" = system default
     void set_latency_ms(int ms);
     void refresh_devices();
-    // Install PhoneMic's own virtual-mic driver (Windows / macOS), then switch to it.
+    // Install PhoneMic's own virtual-mic driver (Windows), then switch to it.
     void install_driver();
     // Look for the virtual microphone again (after installing a driver).
     void redetect_virtual_mic();

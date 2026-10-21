@@ -3,8 +3,7 @@
 //   phone app ─► RFCOMM (service PM_SERVICE_UUID) ─► BluetoothServer ─► Receiver
 //
 // Only the operating system's own Bluetooth stack is used (Winsock AF_BTH on
-// Windows, BlueZ over D-Bus on Linux, IOBluetooth on macOS), so nothing extra is
-// installed. The PC publishes the PhoneMic service (SDP record); the phone finds
+// Windows, BlueZ over D-Bus on Linux), so nothing extra is installed. The PC publishes the PhoneMic service (SDP record); the phone finds
 // it by UUID on the paired PC. Pairing authenticates the phone and the radio
 // encrypts the link.
 //

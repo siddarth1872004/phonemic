@@ -67,17 +67,9 @@ int main(int, char**) {
                              "On a headless machine use `phonemic-receiver` instead.\n");
         return 1;
     }
-#if defined(__APPLE__)
-    const char* glsl = "#version 150";
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-#else
     const char* glsl = "#version 130";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-#endif
     glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);
 
     GLFWwindow* win = glfwCreateWindow(500, 820, "PhoneMic", nullptr, nullptr);
@@ -89,13 +81,11 @@ int main(int, char**) {
     glfwSetWindowSizeLimits(win, 420, 480, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwMakeContextCurrent(win);
     glfwSwapInterval(1);
-#if !defined(__APPLE__)
     {
         auto px = make_icon(64);
         GLFWimage img{64, 64, px.data()};
         glfwSetWindowIcon(win, 1, &img);
     }
-#endif
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -103,14 +93,8 @@ int main(int, char**) {
     io.IniFilename = nullptr;  // nothing to persist; settings live in settings.ini
     float xs = 1, ys = 1;
     glfwGetWindowContentScale(win, &xs, &ys);
-#if defined(__APPLE__)
-    const float scale = 1.0f;  // macOS scales the framebuffer itself
-    io.FontGlobalScale = 1.0f / xs;
-    const float font_scale = xs;
-#else
     const float scale = xs > 0 ? xs : 1.0f;
     const float font_scale = scale;
-#endif
 
     phonemic::UiState ui;
     ui.scale = scale;

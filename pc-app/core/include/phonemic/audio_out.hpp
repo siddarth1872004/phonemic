@@ -1,4 +1,4 @@
-// Audio output devices (miniaudio: WASAPI / PulseAudio / ALSA / CoreAudio).
+// Audio output devices (miniaudio: WASAPI / PulseAudio / ALSA).
 //
 // The device is opened as 48 kHz mono float; miniaudio converts to whatever the
 // hardware/virtual cable actually runs at (44.1 kHz, stereo, int16, ...). The

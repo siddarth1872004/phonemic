@@ -39,7 +39,7 @@ MainActivity (Kotlin, framework widgets): paired-PC picker, Voice Focus,
 
 ```
 BluetoothServer: publishes the "PhoneMic" RFCOMM service through the OS stack
-  (BlueZ Profile1 over D-Bus · Winsock AF_BTH + WSASetService · IOBluetooth)
+  (BlueZ Profile1 over D-Bus · Winsock AF_BTH + WSASetService)
   └─ one thread per connection: serve_stream() → FrameSplitter → packets
                    ▼                         ▲ framed STATUS, 2 Hz
               Receiver::process_audio  (one mutex: the pipeline is single-threaded)
@@ -62,7 +62,7 @@ BluetoothServer: publishes the "PhoneMic" RFCOMM service through the OS stack
 |---|---|
 | Protocol | `shared/include/phonemic/wire.h` |
 | Bluetooth service, framing, per-connection pump | `pc-app/core/src/bluetooth.cpp` |
-| Bluetooth per OS | `bluetooth_linux.cpp` (BlueZ, libdbus loaded at run time), `bluetooth_win.cpp`, `bluetooth_mac.mm` |
+| Bluetooth per OS | `bluetooth_linux.cpp` (BlueZ, libdbus loaded at run time), `bluetooth_win.cpp` |
 | Receive pipeline, sender lock, STATUS | `pc-app/core/src/receiver.cpp` |
 | Jitter buffer | `pc-app/core/src/jitter_buffer.cpp` |
 | Adaptive playout (drift compensation) | `pc-app/core/src/playout.cpp` |
@@ -75,7 +75,6 @@ BluetoothServer: publishes the "PhoneMic" RFCOMM service through the OS stack
 | Settings, helper processes, utilities | `settings.cpp`, `process.cpp`, `util.cpp` |
 | Window | `pc-app/gui/{main,app,ui}.cpp` |
 | Windows driver (ACX) + its ring and feeder | `pc-app/driver/`, `pc-app/ipc/` |
-| macOS driver (Core Audio plug-in) | `pc-app/driver-macos/` |
 | Linux packaging | `packaging/linux/` |
 
 ### Virtual microphone
@@ -83,13 +82,12 @@ BluetoothServer: publishes the "PhoneMic" RFCOMM service through the OS stack
 | OS | How | Apps record |
 |---|---|---|
 | Windows 11 | PhoneMic ACX driver; the app writes into the ring the driver creates | PhoneMic Microphone |
-| macOS | PhoneMic.driver loopback device; the app plays into its output side | PhoneMic Microphone |
 | Linux | PipeWire/PulseAudio null sink + remapped source, created through libpulse | PhoneMic Microphone |
 | Linux, ALSA only | the kernel's `snd-aloop` loopback card | Loopback device 1 |
 
 No third-party virtual-cable driver is used or supported. `default_mic.cpp` makes
 PhoneMic the system default recording device (Windows: all three roles;
-macOS: default input; Linux: default source), for apps without a mic picker.
+Linux: default source), for apps without a mic picker.
 On Linux the mic can stay registered when PhoneMic is closed (a pipewire-pulse
 drop-in, or a marked `.nofail` block in `~/.config/pulse/default.pa`).
 

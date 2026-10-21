@@ -23,7 +23,7 @@ ctest --test-dir build --output-on-failure
 | `test_wire_c99.c` | the shared headers compile as strict C99 |
 
 CI also runs the suite under **AddressSanitizer + UndefinedBehaviorSanitizer**,
-on Windows (MSVC) and macOS, and builds the Android app with lint.
+on Windows (MSVC), and builds the Android app with lint.
 
 The phone's native engine (Opus framing, the bounded send queue, STATUS
 parsing in any chunking) is plain C++ apart from Oboe, so it can also be
@@ -36,7 +36,6 @@ exercised on a desktop with a stub `oboe/Oboe.h` and ASan.
 the tone comes back (level and spectrum). CI runs it:
 
 - on Ubuntu with PulseAudio;
-- on macOS after installing PhoneMic.driver into Core Audio;
 - after installing the `.deb`/`.rpm`/tarball on Ubuntu 22.04 (PulseAudio),
   Debian 12, Fedora 41, Arch Linux and openSUSE Tumbleweed (PipeWire), where the
   test suite also runs; and on Rocky Linux 8 (glibc 2.28, the oldest supported)

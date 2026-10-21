@@ -6,7 +6,7 @@ into the phone and the audio arrives on the PC as a normal microphone,
 other app can select.
 
 It is free and open source, needs no extra hardware or account, and is native
-code throughout: a C++ desktop app for Windows, macOS and Linux, and an Android
+code throughout: a C++ desktop app for Windows and Linux, and an Android
 app with a C++ audio engine. The phone and PC talk over Bluetooth through each
 system's own Bluetooth stack: no Wi-Fi, no network setup and no Bluetooth
 drivers to install. Both apps are small and fast, with a true-black (OLED)
@@ -19,7 +19,7 @@ interface.
   pick the PC in the phone app. No IP addresses, router or firewall involved.
 - The link is a Bluetooth RFCOMM channel to PhoneMic's own service, published
   through the operating system's Bluetooth stack (BlueZ on Linux, the Windows
-  Bluetooth stack, IOBluetooth on macOS). Nothing extra is installed for it.
+  Bluetooth stack). Nothing extra is installed for it.
 - The phone reconnects by itself if the link drops or the PC app restarts.
 - The PC reports its state back to the phone (connected, PC busy, not running),
   so problems are shown where you are looking.
@@ -56,7 +56,6 @@ Get the latest version from the
 | Platform | File |
 |---|---|
 | Windows 11 | `PhoneMic-windows-x64.zip` (app and microphone driver) |
-| macOS 11 or newer | `PhoneMic-macos.zip` (Apple silicon and Intel) |
 | Linux, any distribution | `PhoneMic-x86_64.AppImage` |
 | Debian, Ubuntu, Mint | `phonemic_<version>_amd64.deb` |
 | Fedora, openSUSE, RHEL 8+ | `phonemic-<version>-1.x86_64.rpm` |
@@ -69,8 +68,6 @@ Get the latest version from the
 
 - **Windows:** unzip `PhoneMic-windows-x64.zip` and run `PhoneMic.exe`. Keep the
   `driver` folder next to it.
-- **macOS:** unzip and open `PhoneMic.app`. The first time, right-click it and
-  choose Open, and allow Bluetooth when macOS asks.
 - **Linux:** make the AppImage executable and run it, or install the `.deb` or
   `.rpm` package.
 
@@ -79,7 +76,6 @@ Get the latest version from the
 | System | What to do |
 |---|---|
 | Windows 11 | Click **Install PhoneMic driver** in the PhoneMic window, then restart when asked. |
-| macOS | Click **Install PhoneMic driver** and enter your password. |
 | Linux | Nothing. PhoneMic creates the microphone automatically through PipeWire or PulseAudio. |
 
 This is the microphone itself (the device apps record from), not a Bluetooth
@@ -110,7 +106,6 @@ troubleshooting table.
 | | Minimum |
 |---|---|
 | Windows | Windows 11, version 22H2 (build 22621). Windows 10 is not supported. |
-| macOS | macOS 11. |
 | Linux | glibc 2.28 or newer (Debian 10, Ubuntu 18.10, RHEL 8 and later), X11 or Wayland, and PipeWire or PulseAudio. Plain ALSA systems can use the `snd-aloop` loopback module instead. |
 | Android | Android 10, with Bluetooth. |
 | Bluetooth | Any built-in or USB Bluetooth adapter the system already supports. On Linux, BlueZ (the standard Bluetooth service). |
@@ -162,7 +157,6 @@ Each operating system gets its own microphone implementation:
 | System | Implementation |
 |---|---|
 | Windows | A kernel-mode audio driver (WDF + ACX). The app writes audio into a shared-memory ring that the driver creates and reads on its own clock. |
-| macOS | A Core Audio plug-in (`PhoneMic.driver`): a loopback device loaded by the system audio service, with no kernel extension. |
 | Linux | A virtual sink and source created in PipeWire or PulseAudio through libpulse, which is loaded at run time. |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) covers the design in detail.
@@ -186,7 +180,6 @@ The desktop download also includes:
 | `pc-app/tools/` | The command-line tools. |
 | `pc-app/tests/` | Unit and integration tests. |
 | `pc-app/driver/`, `pc-app/ipc/` | The Windows microphone driver and the shared ring the app feeds it through. |
-| `pc-app/driver-macos/` | The macOS microphone driver. |
 | `phone-app/` | The Android app (Kotlin interface, C++ and Oboe audio engine). |
 | `packaging/linux/` | Desktop entry, icon, AppStream metadata and the AppImage script. |
 | `docs/` | Protocol, architecture, building, testing, release notes and the audit of the 0.2 codebase. |
@@ -201,10 +194,10 @@ The test suite covers the protocol (including fuzzing), the Bluetooth stream
 framing and per-connection pump, the buffers under simulated clock drift, and
 end-to-end transfers from framed phone packets to the microphone.
 
-Continuous integration builds and tests on Linux, Windows and macOS, runs the
+Continuous integration builds and tests on Linux and Windows, runs the
 suite under AddressSanitizer and UndefinedBehaviorSanitizer, builds the Android
 app and the Windows driver, and installs the Linux packages on Debian, Ubuntu,
-Fedora, Arch Linux, openSUSE and Rocky Linux. On Linux and macOS it also plays
+Fedora, Arch Linux, openSUSE and Rocky Linux. On Linux it also plays
 a tone into the real PhoneMic microphone and checks that it comes back out,
 both by name and as the system default. See [docs/TESTING.md](docs/TESTING.md).
 

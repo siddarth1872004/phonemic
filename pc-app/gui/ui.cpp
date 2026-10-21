@@ -461,8 +461,6 @@ Fonts load_fonts(float scale) {
     const char* regular = find_font({
 #if defined(_WIN32)
         "C:\\Windows\\Fonts\\segoeui.ttf",
-#elif defined(__APPLE__)
-        "/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf",
 #else
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -472,8 +470,6 @@ Fonts load_fonts(float scale) {
     const char* bold = find_font({
 #if defined(_WIN32)
         "C:\\Windows\\Fonts\\segoeuib.ttf",
-#elif defined(__APPLE__)
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf",
 #else
         "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf", "/usr/share/fonts/noto/NotoSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",

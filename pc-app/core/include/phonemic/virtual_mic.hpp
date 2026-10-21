@@ -7,8 +7,6 @@
 //   Linux   — PulseAudio/PipeWire's own modules: a null sink "PhoneMic" plus a
 //             remapped source "PhoneMic Microphone", created through libpulse
 //             (optionally kept registered when PhoneMic is closed).
-//   macOS   — PhoneMic.driver (pc-app/driver-macos), a Core Audio plug-in
-//             loopback device: we play into it, apps record it.
 #pragma once
 
 #include <functional>
@@ -62,8 +60,7 @@ DefaultMicState default_mic_state(const VirtualMic& vm);
 bool make_default_mic(const VirtualMic& vm, std::string* err);
 
 // Install PhoneMic's own driver from `vm.driver_package` (Windows: runs
-// install-driver.ps1 elevated, in a console that explains each step; macOS:
-// asks for an administrator password and runs install-driver.sh). Runs on a
+// install-driver.ps1 elevated, in a console that explains each step). Runs on a
 // background thread; `done` gets the outcome. Re-run setup_virtual_mic after.
 void install_driver_async(const VirtualMic& vm, std::function<void(bool ok, std::string message)> done);
 
