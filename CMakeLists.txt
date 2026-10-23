@@ -9,7 +9,7 @@
 # and, on Linux, the X11/GL headers for the window (see docs/BUILDING.md).
 cmake_minimum_required(VERSION 3.21)
 
-project(PhoneMic VERSION 0.4.0 LANGUAGES C CXX)
+project(PhoneMic VERSION 0.4.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

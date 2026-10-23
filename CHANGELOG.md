@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 — 2026-10
+
+Full notes: [docs/releases/v0.4.1.md](docs/releases/v0.4.1.md).
 
 ### Added
 - Desktop app: closing the window hides PhoneMic to the system tray and the

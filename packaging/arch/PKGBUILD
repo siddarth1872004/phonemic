@@ -1,6 +1,6 @@
 # Builds PhoneMic from this checkout: cd packaging/arch && makepkg -si
 pkgname=phonemic
-pkgver=0.4.0
+pkgver=0.4.1
 pkgrel=1
 pkgdesc="Use your phone as a wireless microphone for your PC"
 arch=('x86_64' 'aarch64')

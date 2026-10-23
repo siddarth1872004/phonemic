@@ -6,8 +6,8 @@
 GLFW_ICON ICON "phonemic.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,4,0,0
- PRODUCTVERSION 0,4,0,0
+ FILEVERSION 0,4,1,0
+ PRODUCTVERSION 0,4,1,0
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
 BEGIN
@@ -17,12 +17,12 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "PhoneMic Project"
       VALUE "FileDescription", "PhoneMic - use your phone as a microphone"
-      VALUE "FileVersion", "0.4.0"
+      VALUE "FileVersion", "0.4.1"
       VALUE "InternalName", "PhoneMic"
       VALUE "LegalCopyright", "MIT OR Apache-2.0"
       VALUE "OriginalFilename", "PhoneMic.exe"
       VALUE "ProductName", "PhoneMic"
-      VALUE "ProductVersion", "0.4.0"
+      VALUE "ProductVersion", "0.4.1"
     END
   END
   BLOCK "VarFileInfo"
