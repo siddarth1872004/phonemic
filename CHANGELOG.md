@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Desktop app: closing the window hides PhoneMic to the system tray and the
+  microphone keeps working; left-click the tray icon to show or hide the
+  window, and use its menu to quit. Linux (StatusNotifierItem, e.g. KDE Plasma)
+  and Windows. Without a tray, closing quits as before.
+- Starting PhoneMic again shows the window that is already running instead of
+  opening a second copy.
+- Arch Linux: `packaging/arch/PKGBUILD` (`cd packaging/arch && makepkg -si`).
+
+### Fixed
+- Linux (Wayland): the window could freeze after being re-shown or minimised,
+  waiting on a vsync frame callback that never came.
+
 ## 0.4.0 — 2026-10
 
 Full notes: [docs/releases/v0.4.0.md](docs/releases/v0.4.0.md).

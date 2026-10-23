@@ -15,6 +15,7 @@
 #include <imgui_impl_opengl3.h>
 
 #include "app.hpp"
+#include "tray.hpp"
 #include "ui.hpp"
 
 namespace {
@@ -89,6 +90,17 @@ int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 #endif
+    // Before the window opens: a second launch only shows the running PhoneMic.
+    phonemic::Tray tray;
+#if defined(_WIN32)
+    const auto started = tray.start({});  // the tray uses the .exe's icon resource
+#else
+    const auto started = tray.start({{22, make_icon(22)}, {32, make_icon(32)}, {64, make_icon(64)}});
+#endif
+    if (started == phonemic::Tray::Start::AlreadyRunning) {
+        std::fprintf(stderr, "PhoneMic is already running; showing its window.\n");
+        return 0;
+    }
     glfwSetErrorCallback(glfw_error);
     if (!glfwInit()) {
         std::fprintf(stderr, "PhoneMic needs a graphical desktop (GLFW could not initialise).\n"
@@ -108,7 +120,10 @@ int main(int argc, char** argv) {
     }
     glfwSetWindowSizeLimits(win, 420, 480, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwMakeContextCurrent(win);
-    glfwSwapInterval(1);
+    // On Wayland a vsynced swap waits for the compositor's frame callback, which
+    // may never come for a hidden, re-shown or minimised window and would freeze
+    // the loop; glfwWaitEventsTimeout below paces the frames anyway.
+    glfwSwapInterval(glfwGetPlatform() == GLFW_PLATFORM_WAYLAND ? 0 : 1);
 #if !defined(_WIN32)
     {
         auto px = make_icon(64);
@@ -134,11 +149,46 @@ int main(int argc, char** argv) {
 
     {
         phonemic::App app;
-        while (!glfwWindowShouldClose(win)) {
+        bool told_tray = false;
+        auto show = [&] {
+            glfwShowWindow(win);
+            if (glfwGetWindowAttrib(win, GLFW_ICONIFIED)) glfwRestoreWindow(win);
+            if (glfwGetPlatform() != GLFW_PLATFORM_WAYLAND) glfwFocusWindow(win);  // Wayland can't take focus
+        };
+        double wait = 1.0 / 30.0, last_frame = 0;
+        for (;;) {
             // Sleep until input arrives or ~33 ms pass (keeps the meter live at
             // ~30 fps without burning a CPU core).
-            glfwWaitEventsTimeout(1.0 / 30.0);
+            glfwWaitEventsTimeout(wait);
             app.tick();
+            // With a tray icon, closing the window hides it and the mic keeps working;
+            // "Quit PhoneMic" in the tray menu exits.
+            if (glfwWindowShouldClose(win) && tray.shown()) {
+                glfwSetWindowShouldClose(win, GLFW_FALSE);
+                glfwHideWindow(win);
+                if (!told_tray) app.log.add("PhoneMic keeps running in the system tray (Quit is in its menu)");
+                told_tray = true;
+            }
+            if (tray.take_quit()) break;
+            if (tray.take_toggle()) {
+                if (glfwGetWindowAttrib(win, GLFW_VISIBLE) && !glfwGetWindowAttrib(win, GLFW_ICONIFIED))
+                    glfwHideWindow(win);
+                else
+                    show();
+            }
+            if (tray.take_show()) show();
+            if (!glfwGetWindowAttrib(win, GLFW_VISIBLE)) continue;  // hidden: keep the engine ticking, skip drawing
+            if (glfwWindowShouldClose(win)) break;
+            // At most ~60 fps: without vsync (Wayland) each frame's own buffer
+            // release would wake the loop for the next one. Skipped input waits
+            // in ImGui's queue for the next frame.
+            const double now = glfwGetTime();
+            if (now - last_frame < 1.0 / 60.0) {
+                wait = 1.0 / 60.0 - (now - last_frame);
+                continue;
+            }
+            wait = 1.0 / 30.0;
+            last_frame = now;
             if (ui.theme != app.settings.theme || ui.accent != app.settings.accent) {
                 ui.theme = app.settings.theme;
                 ui.accent = app.settings.accent;

@@ -1,0 +1,25 @@
+# Builds PhoneMic from this checkout: cd packaging/arch && makepkg -si
+pkgname=phonemic
+pkgver=0.4.0
+pkgrel=1
+pkgdesc="Use your phone as a wireless microphone for your PC"
+arch=('x86_64' 'aarch64')
+url="https://github.com/siddarth1872004/phonemic"
+license=('MIT' 'Apache-2.0')
+depends=('libx11' 'libxrandr' 'libxinerama' 'libxcursor' 'libxi' 'libglvnd' 'wayland' 'libxkbcommon')
+optdepends=('libpulse: PipeWire/PulseAudio audio (falls back to ALSA)'
+            'dbus: Bluetooth through BlueZ, and the tray icon'
+            'bluez: Bluetooth connection')
+makedepends=('cmake' 'git')
+options=('!debug')
+
+build() {
+  cmake -S "$startdir/../.." -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+        -DPHONEMIC_WAYLAND=ON -DPHONEMIC_BUILD_TESTS=OFF
+  cmake --build build --parallel
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build --component phonemic
+  install -Dm644 "$startdir/../../LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+}
