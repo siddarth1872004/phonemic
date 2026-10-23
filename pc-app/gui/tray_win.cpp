@@ -109,7 +109,7 @@ Tray::Start Tray::start(std::vector<TrayIcon>) {  // the icon comes from the .ex
     t.nid.uCallbackMessage = kTrayMsg;
     t.nid.hIcon = static_cast<HICON>(LoadImageW(inst, L"GLFW_ICON", IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
                                                 GetSystemMetrics(SM_CYSMICON), 0));
-    if (!t.nid.hIcon) t.nid.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    if (!t.nid.hIcon) t.nid.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     lstrcpynW(t.nid.szTip, L"PhoneMic", ARRAYSIZE(t.nid.szTip));
     t.shown = add_icon(t);
     return Start::Running;
