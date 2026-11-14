@@ -14,8 +14,11 @@ add_executable(phonemic-tests
   test_settings.cpp
   test_opus.cpp
   test_bluetooth.cpp
+  test_aux_mixer.cpp
 )
 target_link_libraries(phonemic-tests PRIVATE phonemic_core opus)
+# The phone's soundboard mixer is header-only and Android-free.
+target_include_directories(phonemic-tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../phone-app/native)
 if(MSVC)
   target_compile_options(phonemic-tests PRIVATE /utf-8)
 endif()

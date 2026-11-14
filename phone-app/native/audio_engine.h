@@ -24,6 +24,8 @@
 
 #include <oboe/Oboe.h>
 
+#include "aux_mixer.h"
+
 struct OpusEncoder;
 
 namespace phonemic {
@@ -52,6 +54,17 @@ public:
     void feed_incoming(const uint8_t* data, size_t len);
     // A new connection: drop the stale backlog and any half-received frame.
     void reset_link();
+
+    // ---- soundboard audio (called from the soundboard's decode thread) ----
+    // Starts a new sound: anything still queued from the previous one is
+    // dropped. False for a format the resampler does not take.
+    bool aux_begin(int src_rate, int channels);
+    // Interleaved 16-bit frames of the current sound. Returns the frames
+    // accepted (fewer when the bounded queue is full: offer the rest later),
+    // or -1 when not streaming.
+    long aux_write(const int16_t* interleaved, size_t frames);
+    void aux_stop();
+    void set_aux_gain(float g) { mixer_.set_gain(g); }
 
     // ---- telemetry for the UI (all lock-free) ----
     bool running() const { return running_.load(); }
@@ -87,6 +100,12 @@ private:
     std::atomic<uint64_t> ring_write_{0}, ring_read_{0};
     std::atomic<int64_t> ring_overruns_{0};
     sem_t wake_;
+
+    // ---- soundboard -> sender ring, mixed in before encoding ----
+    std::mutex aux_mu_;  // serialises producers (aux_begin / aux_write / aux_stop)
+    AuxRing aux_ring_;
+    AuxResampler aux_rs_;
+    AuxMixer mixer_;     // sender thread only, apart from its atomic gain
 
     std::shared_ptr<oboe::AudioStream> stream_;
     std::thread sender_;

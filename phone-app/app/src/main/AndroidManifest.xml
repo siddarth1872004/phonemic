@@ -41,6 +41,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Handles rotation itself so the page (and a clip being sent) isn't reloaded. -->
+        <activity
+            android:name=".SoundboardActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="false"
+            android:label="@string/soundboard"
+            android:parentActivityName=".MainActivity" />
+
         <!-- Streaming runs in a foreground service so capture survives the app
              going to the background. The native engine and the link to the PC
              live inside it. -->

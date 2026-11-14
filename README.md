@@ -38,6 +38,8 @@ choice of accent colours.
   a voice changer, gain with a limiter that cannot clip, and mute from either
   device.
 - "Listen on this PC" lets you monitor yourself on any output device.
+- Soundboard on the phone: tap a sound on MyInstants and it plays into the
+  microphone, mixed with your voice, not out of the phone's speaker.
 
 **The microphone**
 - **Windows:** PhoneMic uses VB-CABLE, a free and signed virtual audio cable

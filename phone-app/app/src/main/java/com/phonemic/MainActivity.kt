@@ -66,7 +66,7 @@ class MainActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        applyAppearance()
+        applyAppearance(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -117,6 +117,10 @@ class MainActivity : Activity() {
         toggle.setOnClickListener { onToggle() }
         muteButton.setOnClickListener {
             startService(Intent(this, StreamingService::class.java).setAction(StreamingService.ACTION_TOGGLE_MUTE))
+        }
+        findViewById<Button>(R.id.soundboardButton).apply {
+            clipToOutline = true
+            setOnClickListener { startActivity(Intent(this@MainActivity, SoundboardActivity::class.java)) }
         }
     }
 
@@ -439,12 +443,6 @@ class MainActivity : Activity() {
     private fun accentIndex() = prefs().getInt("accent", 0).coerceIn(0, ACCENTS.size - 1)
     private fun accentStyle(i: Int) = if (themeIndex() == THEME_LIGHT) ACCENTS_LIGHT[i] else ACCENTS[i]
 
-    /** Theme + accent overlay; must run before the layout is inflated. */
-    private fun applyAppearance() {
-        setTheme(THEMES[themeIndex()])
-        theme.applyStyle(accentStyle(accentIndex()), true)
-    }
-
     private fun setAppearance(key: String, value: Int) {
         if (prefs().getInt(key, 0) == value) return
         prefs().edit().putInt(key, value).apply()
@@ -500,5 +498,14 @@ class MainActivity : Activity() {
             R.style.Accent_Periwinkle_Light, R.style.Accent_Teal_Light, R.style.Accent_Violet_Light,
             R.style.Accent_Rose_Light, R.style.Accent_Amber_Light,
         )
+
+        /** Theme + accent overlay; must run before the layout is inflated. Shared with [SoundboardActivity]. */
+        fun applyAppearance(a: Activity) {
+            val p = a.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val theme = p.getInt("theme", 0).coerceIn(0, THEMES.size - 1)
+            val accent = p.getInt("accent", 0).coerceIn(0, ACCENTS.size - 1)
+            a.setTheme(THEMES[theme])
+            a.theme.applyStyle(if (theme == THEME_LIGHT) ACCENTS_LIGHT[accent] else ACCENTS[accent], true)
+        }
     }
 }

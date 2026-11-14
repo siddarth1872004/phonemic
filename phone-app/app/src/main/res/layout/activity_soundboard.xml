@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="?attr/pmBg"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="10dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/sbDot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/dot" />
+
+            <TextView
+                android:id="@+id/sbStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="?attr/pmText"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/sbStop"
+                style="@style/Pill"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:layout_marginStart="10dp"
+                android:backgroundTint="?attr/pmControl"
+                android:paddingHorizontal="18dp"
+                android:text="@string/sb_stop"
+                android:textColor="?attr/pmText"
+                android:textSize="14sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/sb_level"
+                android:textColor="?attr/pmMuted"
+                android:textSize="13sp" />
+
+            <SeekBar
+                android:id="@+id/sbGain"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="200"
+                android:progressBackgroundTint="?attr/pmEdge"
+                android:progressTint="?attr/pmAccent"
+                android:thumbTint="?attr/pmAccent" />
+
+            <TextView
+                android:id="@+id/sbGainValue"
+                android:layout_width="44dp"
+                android:layout_height="wrap_content"
+                android:gravity="end"
+                android:textColor="?attr/pmMuted"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/sbProgress"
+        style="@android:style/Widget.Material.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="3dp"
+        android:indeterminate="false"
+        android:max="100"
+        android:progressBackgroundTint="?attr/pmBg"
+        android:progressTint="?attr/pmAccent" />
+
+    <FrameLayout
+        android:id="@+id/sbWebFrame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- WebView is added here in code, so a crashed renderer can be replaced. -->
+
+        <!-- Swallows taps until the page's sound buttons are routed to PhoneMic,
+             so an early tap can't play through the phone's speaker. -->
+        <View
+            android:id="@+id/sbBlocker"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="?attr/pmBg"
+            android:alpha="0.6"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <LinearLayout
+            android:id="@+id/sbError"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="?attr/pmBg"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="32dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/sbErrorText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textColor="?attr/pmText"
+                android:textSize="15sp" />
+
+            <Button
+                android:id="@+id/sbRetry"
+                style="@style/Pill"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginTop="18dp"
+                android:backgroundTint="?attr/pmAccent"
+                android:paddingHorizontal="28dp"
+                android:text="@string/sb_retry"
+                android:textColor="?attr/pmOnAccent"
+                android:textSize="15sp" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

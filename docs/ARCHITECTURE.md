@@ -21,7 +21,8 @@
 Oboe input (AAudio, 48 kHz, I16, mono, low-latency)
   └─ onAudioReady [realtime]  → peak meter → SPSC ring (32k samples) → sem_post
 sender thread
-  └─ 10 ms frames → [Opus encode, 48 kbps, FEC] → wire.h AUDIO packet
+  └─ 10 ms frames → + soundboard aux (aux_mixer.h: mic + aux·gain, peak
+     limiter at -1 dB; mic bit-exact when no aux) → [Opus encode, 48 kbps, FEC] → wire.h AUDIO packet
      (media-clock timestamp, session id) → [u16 len] frame
      → bounded queue (20 frames, oldest dropped)
   └─ reopens the stream after onErrorAfterClose (headset, Bluetooth…)
@@ -35,6 +36,11 @@ StreamingService (Kotlin, foreground, type=microphone)
      writer thread: readOutgoing() → conn; reader thread: conn → feedIncoming()
      → STATUS → atomics → UI / notification; reconnects every 2 s on failure
   └─ Android NoiseSuppressor/AEC, notification actions
+SoundboardActivity: the MyInstants site in a WebView. An injected script
+  replaces HTMLMediaElement.play() (nothing reaches the speaker) and posts the
+  clip URL over a WebMessage port given only to the MyInstants origin. Kotlin
+  downloads it, decodes it (MediaCodec) and feeds auxWrite() → downmix +
+  resample → bounded aux SPSC ring (~680 ms), paced by the sender.
 MainActivity (Kotlin, framework widgets): link picker (Bluetooth / Wi-Fi /
   USB), paired-PC picker, Find your PC (Discovery.kt, HELLO/ANNOUNCE), PIN,
   Voice Focus, start/stop/mute, status, Appearance (theme + accent)

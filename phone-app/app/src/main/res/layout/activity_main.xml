@@ -314,6 +314,16 @@
             android:textSize="15sp"
             android:visibility="gone" />
 
+        <Button
+            android:id="@+id/soundboardButton"
+            style="@style/Pill"
+            android:layout_height="50dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="?attr/pmControl"
+            android:text="@string/soundboard"
+            android:textColor="?attr/pmText"
+            android:textSize="15sp" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -1,6 +1,7 @@
 // JNI glue between com.phonemic.NativeBridge and the native AudioEngine.
 // Control calls and telemetry cross here, plus the encoded frames on their way
-// to the link's socket (Java owns it) — never a raw audio buffer.
+// to the link's socket (Java owns it). The one raw audio path is the
+// soundboard's decoded PCM going into the engine's bounded aux queue.
 #include <jni.h>
 
 #include <algorithm>
@@ -114,6 +115,37 @@ JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcLost(JNIEnv*, jobject) 
 
 JNIEXPORT jlong JNICALL Java_com_phonemic_NativeBridge_pcReceived(JNIEnv*, jobject) {
     return static_cast<jlong>(engine()->pc_received());
+}
+
+JNIEXPORT jboolean JNICALL Java_com_phonemic_NativeBridge_auxBegin(JNIEnv*, jobject, jint rate, jint channels) {
+    return engine()->aux_begin(rate, channels) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL Java_com_phonemic_NativeBridge_auxWrite(JNIEnv* env, jobject, jshortArray pcm, jint offset_frames,
+                                                               jint frames, jint channels) {
+    if (channels < 1 || channels > 8 || offset_frames < 0 || frames <= 0) return 0;
+    const jlong len = env->GetArrayLength(pcm);
+    if ((static_cast<jlong>(offset_frames) + frames) * channels > len) return 0;
+    // Through a stack buffer in whole frames, so the array is never pinned.
+    constexpr jint kChunkSamples = 4096;
+    jshort tmp[kChunkSamples];
+    const jint chunk_frames = kChunkSamples / channels;
+    jint done = 0;
+    while (done < frames) {
+        const jint k = std::min(frames - done, chunk_frames);
+        env->GetShortArrayRegion(pcm, (offset_frames + done) * channels, k * channels, tmp);
+        const long took = engine()->aux_write(reinterpret_cast<const int16_t*>(tmp), static_cast<size_t>(k));
+        if (took < 0) return done > 0 ? done : -1;
+        done += static_cast<jint>(took);
+        if (took < k) break;
+    }
+    return done;
+}
+
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_auxStop(JNIEnv*, jobject) { engine()->aux_stop(); }
+
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_setAuxGain(JNIEnv*, jobject, jfloat g) {
+    engine()->set_aux_gain(g);
 }
 
 }  // extern "C"

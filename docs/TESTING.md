@@ -76,6 +76,30 @@ rename and default-speaker code has no automated tests.
 On Linux, `bluetoothctl show` confirms the adapter is powered, and
 `journalctl -u bluetooth` shows BlueZ's view of the connection.
 
+### Soundboard
+
+Needs a real phone; the WebView part cannot be checked on the PC.
+
+1. Start streaming (any link) and on the PC open a recorder on
+   "PhoneMic Microphone" (or enable **Listen on this PC**).
+2. Open **Soundboard** and wait for the page to stop being dimmed. Tap
+   **VINE BOOM**: the PC hears it, and the phone's speaker stays silent.
+3. Talk while tapping sounds: voice and sound are both heard, without clipping
+   or wrapping noise, even with **Level** at 200%.
+4. Tap a long sound, then another: the first stops at once. **Stop** silences
+   the current one.
+5. Stop streaming and tap a sound: a "Not streaming" message appears and nothing
+   plays anywhere. Start again: no leftover of the earlier sound.
+6. Mute: sounds are muted too, and do not play late after unmuting.
+7. Rotate the phone during a sound: the page is not reloaded and the sound
+   continues. Press Home: streaming and the current sound continue.
+8. Turn data off and reopen the screen: an error with **Retry** is shown.
+9. Follow a link off MyInstants (an ad): it does not open.
+10. Renderer crash (emulator or rooted phone, after `adb root`): find the
+    app's `sandboxed_process` with `adb shell ps -A` and `adb shell kill` it.
+    The app keeps running, logcat shows "WebView renderer gone" and the screen
+    offers **Retry**.
+
 ### Real end-to-end latency (clap test)
 
 1. Put a third device that records audio (another phone/laptop) next to the

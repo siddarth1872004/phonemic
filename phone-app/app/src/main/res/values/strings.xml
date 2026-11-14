@@ -71,6 +71,19 @@
     <string name="codec_opus">Opus</string>
     <string name="codec_pcm">%1$.1f kHz PCM</string>
 
+    <string name="soundboard">Soundboard</string>
+    <string name="sb_level">Level</string>
+    <string name="sb_level_fmt">%1$d%%</string>
+    <string name="sb_stop">Stop</string>
+    <string name="sb_retry">Retry</string>
+    <string name="sb_not_streaming">Not streaming. Start PhoneMic first: sounds only go to the PC, never the speaker.</string>
+    <string name="sb_ready">Streaming. Tap a sound to send it to the PC.</string>
+    <string name="sb_muted">Muted. Sounds are muted too.</string>
+    <string name="sb_playing_fmt">Sending %1$s to the PC</string>
+    <string name="sb_sound_failed">Couldn\'t load that sound.</string>
+    <string name="sb_page_failed">Couldn\'t load MyInstants. Check the phone\'s internet connection.</string>
+    <string name="sb_crashed">The page stopped working.</string>
+
     <string name="notif_channel">PhoneMic streaming</string>
     <string name="notif_title">PhoneMic is using your microphone</string>
     <string name="notif_title_muted">PhoneMic (muted)</string>

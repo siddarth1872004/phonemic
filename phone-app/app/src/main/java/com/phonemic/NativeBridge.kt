@@ -3,11 +3,12 @@ package com.phonemic
 /**
  * The entire JNI surface between Kotlin and the native audio engine.
  *
- * Principle #1 (the hot path is native): raw audio never crosses this
- * boundary. Capture (Oboe), Opus encoding, PIN sealing and framing happen in
- * C++; Kotlin only moves the finished frames onto the link's socket (Android
- * exposes RFCOMM to Java alone) and hands the PC's replies back. Coarse telemetry
- * comes up for the UI.
+ * Principle #1 (the hot path is native): mic audio never crosses this
+ * boundary. Capture (Oboe), mixing, Opus encoding, PIN sealing and framing
+ * happen in C++; Kotlin only moves the finished frames onto the link's socket
+ * (Android exposes RFCOMM to Java alone) and hands the PC's replies back.
+ * Coarse telemetry comes up for the UI. The one exception is the soundboard:
+ * its decoded clips go down (aux*) into a bounded queue the sender mixes in.
  */
 object NativeBridge {
 
@@ -81,4 +82,23 @@ object NativeBridge {
     external fun pcBufferMs(): Int
     external fun pcLost(): Long
     external fun pcReceived(): Long
+
+    /**
+     * Start a new soundboard clip of [rate] Hz with [channels] interleaved
+     * channels, dropping whatever is still queued. False if the format is unusable.
+     */
+    external fun auxBegin(rate: Int, channels: Int): Boolean
+
+    /**
+     * Queue [frames] interleaved frames of the current clip from [pcm], starting
+     * at frame [offsetFrames]. Returns the frames accepted (fewer when the queue
+     * is full: offer the rest again shortly), or -1 when not streaming.
+     */
+    external fun auxWrite(pcm: ShortArray, offsetFrames: Int, frames: Int, channels: Int): Int
+
+    /** Drop the queued clip. */
+    external fun auxStop()
+
+    /** Soundboard level relative to the mic, 0.0..2.0. */
+    external fun setAuxGain(gain: Float)
 }

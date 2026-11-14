@@ -80,6 +80,8 @@ int AudioEngine::start(bool voice_focus, const std::string& pin) {
     voice_focus_ = voice_focus;
     ring_write_.store(0);
     ring_read_.store(0);
+    aux_ring_.drop_all();
+    mixer_.reset();
     packets_sent_.store(0);
     pc_state_.store(-1);
     pc_last_ms_.store(0);
@@ -210,6 +212,25 @@ void AudioEngine::onErrorAfterClose(oboe::AudioStream*, oboe::Result error) {
     sem_post(&wake_);
 }
 
+bool AudioEngine::aux_begin(int src_rate, int channels) {
+    if (!AuxResampler::valid(src_rate, channels)) return false;
+    std::lock_guard<std::mutex> lk(aux_mu_);
+    aux_ring_.discard();
+    aux_rs_.begin(src_rate, channels, sample_rate_.load());
+    return true;
+}
+
+long AudioEngine::aux_write(const int16_t* interleaved, size_t frames) {
+    std::lock_guard<std::mutex> lk(aux_mu_);
+    if (!running_.load()) return -1;
+    return static_cast<long>(aux_rs_.process(interleaved, frames, aux_ring_));
+}
+
+void AudioEngine::aux_stop() {
+    std::lock_guard<std::mutex> lk(aux_mu_);
+    aux_ring_.discard();
+}
+
 void AudioEngine::sender_loop() {
     while (running_.load()) {
         timespec ts{};
@@ -238,6 +259,7 @@ void AudioEngine::sender_loop() {
             if (w - r < frame) break;
             for (size_t i = 0; i < frame; ++i) frame_[i] = ring_[(r + i) & (kRingSize - 1)];
             ring_read_.store(r + frame, std::memory_order_release);
+            mixer_.mix(frame_.data(), frame, aux_ring_, muted_.load(std::memory_order_relaxed));
             send_frame(frame_.data(), frame);
         }
     }
