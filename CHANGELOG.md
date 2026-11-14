@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-11
+
+Full notes: [docs/releases/v0.5.0.md](docs/releases/v0.5.0.md).
+
+### Added
+- Phone app: **Soundboard**. It opens the MyInstants site, and tapping a sound
+  sends it into the PhoneMic microphone, mixed with your voice, instead of
+  playing it on the phone's speaker. It has its own level control and a limiter
+  so voice plus sound cannot clip. The PC app and the protocol are unchanged.
+
 ## 0.4.1 — 2026-10
 
 Full notes: [docs/releases/v0.4.1.md](docs/releases/v0.4.1.md).
