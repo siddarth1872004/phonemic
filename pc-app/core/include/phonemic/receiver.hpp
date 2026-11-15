@@ -158,6 +158,11 @@ private:
     Resampler resampler_;
     Concealer concealer_;
     Denoiser denoiser_;
+    // RNNoise treats soundboard clips as noise, so frames flagged
+    // PM_FLAG_SOUND (plus a little slack for reordering) bypass it.
+    static constexpr uint64_t kSoundBypassMs = 100;
+    uint64_t sound_until_ms_ = 0;
+    bool denoise_bypassed_ = false;
     VoiceFx fx_;
     GainLimiter gain_;
     std::vector<float> scratch_in_, scratch_rs_, scratch_dn_;

@@ -114,8 +114,17 @@ TEST(wire_rejects_unknown_codec_and_flags) {
     b[4] = 5;
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_ERR_UNKNOWN_CODEC);
     b = encode(hdr(), kPayload, sizeof kPayload);
-    b[5] = 0x02;  // only PM_FLAG_ENCRYPTED is defined
+    b[5] = 0x04;  // only PM_FLAG_ENCRYPTED and PM_FLAG_SOUND are defined
     CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_ERR_BAD_FIELD);
+}
+
+TEST(wire_sound_flag_round_trips) {
+    pm_audio_header d{};
+    const uint8_t* p = nullptr;
+    auto b = encode(hdr(42, 1234567890ull, PM_FLAG_SOUND), kPayload, sizeof kPayload);
+    CHECK_EQ(pm_decode_audio(b.data(), b.size(), &d, &p), PM_OK);
+    CHECK(d.flags & PM_FLAG_SOUND);
+    CHECK(!(d.flags & PM_FLAG_ENCRYPTED));
 }
 
 TEST(wire_rejects_bad_session_and_rate) {

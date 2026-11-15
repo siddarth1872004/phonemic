@@ -63,7 +63,7 @@ choice of accent colours.
 - Only one phone can feed the microphone at a time.
 
 **Look**
-- OLED black (default), Dark and Light themes and five accent colours, chosen
+- Black (default), Graphite and Silver themes and five accent colours, chosen
   the same way on the phone and the PC.
 
 ## Download

@@ -82,6 +82,8 @@ int AudioEngine::start(bool voice_focus, const std::string& pin) {
     ring_read_.store(0);
     aux_ring_.drop_all();
     mixer_.reset();
+    sound_hold_ = 0;
+    opus_music_ = false;
     packets_sent_.store(0);
     pc_state_.store(-1);
     pc_last_ms_.store(0);
@@ -259,13 +261,27 @@ void AudioEngine::sender_loop() {
             if (w - r < frame) break;
             for (size_t i = 0; i < frame; ++i) frame_[i] = ring_[(r + i) & (kRingSize - 1)];
             ring_read_.store(r + frame, std::memory_order_release);
-            mixer_.mix(frame_.data(), frame, aux_ring_, muted_.load(std::memory_order_relaxed));
-            send_frame(frame_.data(), frame);
+            // The mic is muted at capture, so muted_ is not needed here.
+            if (mixer_.mix(frame_.data(), frame, aux_ring_, aux_muted_.load(std::memory_order_relaxed)) > 0)
+                sound_hold_ = kSoundHoldFrames;
+            else if (sound_hold_ > 0)
+                --sound_hold_;
+            send_frame(frame_.data(), frame, sound_hold_ > 0);
         }
     }
 }
 
-void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
+// Voice mode (SILK, speech-tuned) turns music and sound effects to mush, so
+// while a sound is in the mix the encoder runs as full-band CELT at a higher
+// rate. Switching mid-stream is fine for Opus; the decoder follows on its own.
+void AudioEngine::set_opus_mode(bool sound) {
+    if (opus_ == nullptr || sound == opus_music_) return;
+    opus_music_ = sound;
+    opus_encoder_ctl(opus_, OPUS_SET_SIGNAL(sound ? OPUS_SIGNAL_MUSIC : OPUS_SIGNAL_VOICE));
+    opus_encoder_ctl(opus_, OPUS_SET_BITRATE(sound ? 96000 : 48000));
+}
+
+void AudioEngine::send_frame(const int16_t* pcm, size_t n, bool sound) {
     pm_audio_header h{};
     // Opus only takes 48 kHz 10 ms frames. If the stream was reopened at another
     // rate mid-session, drop frames rather than switch codec (the PC would treat
@@ -273,6 +289,7 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
     const bool opus = opus_ != nullptr && n == static_cast<size_t>(PM_SAMPLE_RATE / 100);
     if (opus_ != nullptr && !opus) return;  // rate changed under Opus: drop until it recovers
     h.codec = opus ? PM_CODEC_OPUS : PM_CODEC_PCM16;
+    if (sound) h.flags |= PM_FLAG_SOUND;
     h.session_id = session_;
     h.seq = seq_++;
     // A media clock (like RTP): capture start + samples so far. The PC's jitter
@@ -284,6 +301,7 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
     const uint8_t* body = reinterpret_cast<const uint8_t*>(pcm);
     size_t bytes = n * sizeof(int16_t);  // little-endian on all Android ABIs
     if (opus) {
+        set_opus_mode(sound);
         const int len = opus_encode(opus_, pcm, static_cast<int>(n), encoded_.data(),
                                     static_cast<opus_int32>(encoded_.size()));
         if (len <= 0) return;
@@ -294,7 +312,7 @@ void AudioEngine::send_frame(const int16_t* pcm, size_t n) {
     size_t total;
     if (encrypt_) {
         if (PM_AUDIO_HEADER_LEN + bytes + PM_TAG_LEN > PM_MAX_DATAGRAM) return;
-        h.flags = PM_FLAG_ENCRYPTED;
+        h.flags |= PM_FLAG_ENCRYPTED;
         h.payload_len = static_cast<uint16_t>(bytes + PM_TAG_LEN);
         pm_write_audio_header(out, &h);  // header first: it is the AAD
         pm_seal(key_, out, PM_AUDIO_HEADER_LEN, session_, h.seq, h.timestamp_us, body, bytes, out + PM_AUDIO_HEADER_LEN);

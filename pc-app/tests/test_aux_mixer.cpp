@@ -38,7 +38,7 @@ TEST(aux_mic_only_is_bit_exact) {
     AuxMixer mix;
     const auto mic = tone(kFrame, 0.95f, 440, 48000);
     auto out = mic;
-    mix.mix(out.data(), out.size(), ring, false);
+    CHECK_EQ(mix.mix(out.data(), out.size(), ring, false), size_t{0});
     CHECK(out == mic);  // no aux queued: not even the limiter touches it
 }
 
@@ -51,7 +51,7 @@ TEST(aux_only_reaches_output_at_gain) {
     const auto clip = tone(kFrame * 3, 0.5f, 1000, 48000);
     feed(ring, rs, clip, 1);
     std::vector<int16_t> out(kFrame, 0);
-    mix.mix(out.data(), out.size(), ring, false);
+    CHECK_EQ(mix.mix(out.data(), out.size(), ring, false), kFrame);
     for (size_t i = 0; i < kFrame; ++i) CHECK_EQ(out[i], clip[i]);
 }
 
@@ -176,7 +176,7 @@ TEST(aux_muted_consumes_without_mixing) {
     rs.begin(48000, 1, 48000);
     feed(ring, rs, std::vector<int16_t>(kFrame * 2, 5000), 1);
     std::vector<int16_t> out(kFrame, 0);
-    mix.mix(out.data(), out.size(), ring, true);
+    CHECK_EQ(mix.mix(out.data(), out.size(), ring, true), size_t{0});  // nothing reported as sound
     for (int16_t s : out) CHECK_EQ(s, 0);
     mix.mix(out.data(), out.size(), ring, true);
     CHECK_EQ(drain(ring), size_t{0});  // nothing left to play late after unmuting

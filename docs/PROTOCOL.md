@@ -45,7 +45,7 @@ off size field
 
 ```
  4   1   codec         0 = PCM16, 1 = Opus
- 5   1   flags         bit0 = encrypted; other bits must be 0
+ 5   1   flags         bit0 = encrypted; bit1 = carries soundboard audio (skip speech denoising); other bits must be 0
  6   2   payload_len   bytes after the header (incl. 16-byte tag if encrypted)
  8   4   session_id    random per stream start, never 0
 12   4   seq           per session, from 0

@@ -90,12 +90,16 @@ Needs a real phone; the WebView part cannot be checked on the PC.
    the current one.
 5. Stop streaming and tap a sound: a "Not streaming" message appears and nothing
    plays anywhere. Start again: no leftover of the earlier sound.
-6. Mute: sounds are muted too, and do not play late after unmuting.
-7. Rotate the phone during a sound: the page is not reloaded and the sound
+6. **Mute mic**: the PC hears sounds but not your voice. **Mute sounds**: the
+   PC hears your voice but not sounds, and a muted sound does not play late
+   after unmuting.
+7. With **Voice focus** on (PC) tap a music clip: it sounds as clear as on the
+   website, not muffled or gated. Speech alone still gets denoised.
+8. Rotate the phone during a sound: the page is not reloaded and the sound
    continues. Press Home: streaming and the current sound continue.
-8. Turn data off and reopen the screen: an error with **Retry** is shown.
-9. Follow a link off MyInstants (an ad): it does not open.
-10. Renderer crash (emulator or rooted phone, after `adb root`): find the
+9. Turn data off and reopen the screen: an error with **Retry** is shown.
+10. Follow a link off MyInstants (an ad): it does not open.
+11. Renderer crash (emulator or rooted phone, after `adb root`): find the
     app's `sandboxed_process` with `adb shell ps -A` and `adb shell kill` it.
     The app keeps running, logcat shows "WebView renderer gone" and the screen
     offers **Retry**.

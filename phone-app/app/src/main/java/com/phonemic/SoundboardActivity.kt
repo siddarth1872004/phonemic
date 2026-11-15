@@ -2,6 +2,7 @@ package com.phonemic
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.media.AudioFormat
@@ -72,6 +73,9 @@ class SoundboardActivity : Activity() {
     private lateinit var dot: View
     private lateinit var status: TextView
     private lateinit var stop: Button
+    private lateinit var mutes: View
+    private lateinit var muteMic: Button
+    private lateinit var muteSounds: Button
 
     private var web: WebView? = null
     private var port: WebMessagePort? = null
@@ -102,7 +106,20 @@ class SoundboardActivity : Activity() {
         status = findViewById(R.id.sbStatus)
         stop = findViewById(R.id.sbStop)
         stop.clipToOutline = true
+        stop.compoundDrawableTintList = ColorStateList.valueOf(color(R.attr.pmAccent))
         stop.setOnClickListener { stopSound() }
+        mutes = findViewById(R.id.sbMutes)
+        muteMic = findViewById(R.id.sbMuteMic)
+        muteSounds = findViewById(R.id.sbMuteSounds)
+        muteMic.clipToOutline = true
+        muteSounds.clipToOutline = true
+        // Through the service, so its notification stays in step.
+        muteMic.setOnClickListener {
+            startService(Intent(this, StreamingService::class.java).setAction(StreamingService.ACTION_TOGGLE_MUTE))
+        }
+        muteSounds.setOnClickListener {
+            startService(Intent(this, StreamingService::class.java).setAction(StreamingService.ACTION_TOGGLE_SOUNDS))
+        }
         findViewById<Button>(R.id.sbRetry).apply {
             clipToOutline = true
             setOnClickListener {
@@ -433,14 +450,22 @@ class SoundboardActivity : Activity() {
         val p = playing
         val (text, tone) = when {
             !running -> getString(R.string.sb_not_streaming) to R.attr.pmAmber
-            StreamingService.muted -> getString(R.string.sb_muted) to R.attr.pmAmber
             failedAt != 0L && SystemClock.uptimeMillis() - failedAt < 3000 -> getString(R.string.sb_sound_failed) to R.attr.pmRed
+            StreamingService.soundsMuted -> getString(R.string.sb_sounds_muted) to R.attr.pmAmber
             p != null -> getString(R.string.sb_playing_fmt, p) to R.attr.pmGreen
+            StreamingService.muted -> getString(R.string.sb_mic_muted) to R.attr.pmAmber
             else -> getString(R.string.sb_ready) to R.attr.pmGreen
         }
         if (status.text.toString() != text) status.text = text
         dot.backgroundTintList = ColorStateList.valueOf(color(tone))
         stop.visibility = if (running && p != null) View.VISIBLE else View.GONE
+        mutes.visibility = if (running) View.VISIBLE else View.GONE
+        val micMuted = StreamingService.muted
+        muteMic.text = getString(if (micMuted) R.string.unmute else R.string.mute)
+        muteMic.compoundDrawableTintList = ColorStateList.valueOf(color(if (micMuted) R.attr.pmRed else R.attr.pmLedOff))
+        val soundsMuted = StreamingService.soundsMuted
+        muteSounds.text = getString(if (soundsMuted) R.string.sb_unmute_sounds else R.string.sb_mute_sounds)
+        muteSounds.compoundDrawableTintList = ColorStateList.valueOf(color(if (soundsMuted) R.attr.pmRed else R.attr.pmLedOff))
     }
 
     private fun showError(msg: String) {

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">PhoneMic</string>
-    <string name="tagline">Your phone, as your PC\'s microphone</string>
     <string name="pc_label">PC</string>
     <string name="choose_pc">Choose your PC</string>
     <string name="pc_hint_choose">Pick a PC you\'ve paired over Bluetooth</string>
@@ -28,18 +27,42 @@
     <string name="pin_desc">Leave empty if the PC has no PIN. Only Wi-Fi uses it.</string>
     <string name="ok">OK</string>
     <string name="search_again">Search again</string>
-    <string name="appearance_label">APPEARANCE</string>
-    <string name="theme_oled">OLED</string>
-    <string name="theme_dark">Dark</string>
-    <string name="theme_light">Light</string>
-    <string name="voice_focus">Voice Focus</string>
+    <string name="appearance_label">Faceplate</string>
+    <string name="theme_oled">Black</string>
+    <string name="theme_dark">Graphite</string>
+    <string name="theme_light">Silver</string>
     <string name="voice_focus_desc">Phone noise &amp; echo cleanup before sending</string>
     <string name="start">Start</string>
     <string name="stop">Stop</string>
-    <string name="mute">Mute</string>
-    <string name="unmute">Unmute</string>
+    <string name="mute">Mute mic</string>
+    <string name="unmute">Unmute mic</string>
     <string name="background_hint">Keeps running in the background. You can lock the screen.</string>
-    <string name="version_fmt">PhoneMic v%1$s</string>
+    <string name="version_fmt">Mic link / v%1$s</string>
+    <string name="wordmark">PHONEMIC</string>
+    <string name="tally_standby">STANDBY</string>
+    <string name="tally_on_air">ON AIR</string>
+    <string name="tally_muted">MUTED</string>
+    <string name="monitor_label">Monitor</string>
+    <string name="routing_label">Routing</string>
+    <string name="signal">Signal</string>
+    <string name="no_signal">No signal</string>
+    <string name="ring_start">START</string>
+    <string name="ring_start_sub">TAP TO GO LIVE</string>
+    <string name="ring_connecting">LINKING</string>
+    <string name="ring_live">ON AIR</string>
+    <string name="ring_muted">MUTED</string>
+    <string name="ring_stop_sub">TAP TO STOP</string>
+    <string name="key_mic">Mic</string>
+    <string name="key_voice">Voice</string>
+    <string name="key_sfx">SFX</string>
+    <string name="read_codec">CODEC\n%1$s</string>
+    <string name="read_sent">SENT\n%1$d</string>
+    <string name="read_loss">LOSS\n%1$.1f%%</string>
+    <string name="read_buffer">BUFFER\n%1$dms</string>
+    <string name="read_codec_idle">CODEC\n—</string>
+    <string name="read_sent_idle">SENT\n—</string>
+    <string name="read_loss_idle">LOSS\n—</string>
+    <string name="read_buffer_idle">BUFFER\n—</string>
 
     <string name="no_paired_pc">No paired devices yet. Pair this phone with your PC in Bluetooth settings, then open PhoneMic on the PC.</string>
     <string name="open_bt_settings">Bluetooth settings</string>
@@ -67,9 +90,8 @@
     <string name="status_unsupported">The PC can\'t read this audio. Update PhoneMic on the PC.</string>
     <string name="err_crypto">Couldn\'t set up encryption with that PIN.</string>
     <string name="err_audio">Couldn\'t open the microphone (is another app using it?).</string>
-    <string name="stats_fmt">%1$s  ·  %2$d packets  ·  %3$.1f%% lost</string>
     <string name="codec_opus">Opus</string>
-    <string name="codec_pcm">%1$.1f kHz PCM</string>
+    <string name="codec_pcm">PCM %1$.0fk</string>
 
     <string name="soundboard">Soundboard</string>
     <string name="sb_level">Level</string>
@@ -78,7 +100,10 @@
     <string name="sb_retry">Retry</string>
     <string name="sb_not_streaming">Not streaming. Start PhoneMic first: sounds only go to the PC, never the speaker.</string>
     <string name="sb_ready">Streaming. Tap a sound to send it to the PC.</string>
-    <string name="sb_muted">Muted. Sounds are muted too.</string>
+    <string name="sb_mic_muted">Mic muted. Sounds still go to the PC.</string>
+    <string name="sb_sounds_muted">Sounds muted. The mic still streams.</string>
+    <string name="sb_mute_sounds">Mute sounds</string>
+    <string name="sb_unmute_sounds">Unmute sounds</string>
     <string name="sb_playing_fmt">Sending %1$s to the PC</string>
     <string name="sb_sound_failed">Couldn\'t load that sound.</string>
     <string name="sb_page_failed">Couldn\'t load MyInstants. Check the phone\'s internet connection.</string>
@@ -86,5 +111,5 @@
 
     <string name="notif_channel">PhoneMic streaming</string>
     <string name="notif_title">PhoneMic is using your microphone</string>
-    <string name="notif_title_muted">PhoneMic (muted)</string>
+    <string name="notif_title_muted">PhoneMic (mic muted)</string>
 </resources>

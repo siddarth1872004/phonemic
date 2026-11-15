@@ -23,9 +23,10 @@ struct CollectSink : AudioSinkIface {
 };
 
 std::vector<uint8_t> audio_packet(uint32_t session, uint32_t seq, const std::vector<int16_t>& pcm,
-                                  uint32_t rate = 48000, const std::string& pass = "") {
+                                  uint32_t rate = 48000, const std::string& pass = "", uint8_t flags = 0) {
     pm_audio_header h{};
     h.codec = PM_CODEC_PCM16;
+    h.flags = flags;
     h.session_id = session;
     h.seq = seq;
     h.timestamp_us = 1000000ull + seq * 10000ull;
@@ -40,7 +41,7 @@ std::vector<uint8_t> audio_packet(uint32_t session, uint32_t seq, const std::vec
         pm_encode_audio(out.data(), out.size(), &h, payload.data(), payload.size());
         return out;
     }
-    h.flags = PM_FLAG_ENCRYPTED;
+    h.flags |= PM_FLAG_ENCRYPTED;
     h.payload_len = static_cast<uint16_t>(payload.size() + PM_TAG_LEN);
     std::vector<uint8_t> out(PM_AUDIO_HEADER_LEN + h.payload_len);
     pm_write_audio_header(out.data(), &h);
@@ -93,6 +94,15 @@ TEST(rx_plaintext_audio_reaches_the_mic_sink_unchanged) {
     CHECK_EQ(snap.lost, 0u);
     CHECK(snap.peer == "Pixel 1");
     CHECK(r.mon.got.empty());  // monitor is off by default
+}
+
+TEST(rx_soundboard_frames_skip_voice_focus) {
+    Rig r;
+    r.rx.set_voice_focus(true);
+    for (int s = 0; s < 10; ++s) r.feed(audio_packet(7, s, tone(s), 48000, "", PM_FLAG_SOUND));
+    CHECK_EQ(r.mic.got.size(), 4800u);
+    const auto t5 = tone(5);
+    for (size_t i = 0; i < 480; ++i) CHECK_NEAR(r.mic.got[5 * 480 + i], t5[i] / 32768.0, 1e-6);
 }
 
 TEST(rx_monitor_gets_a_copy_when_enabled) {

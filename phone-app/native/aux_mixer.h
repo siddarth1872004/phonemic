@@ -130,11 +130,12 @@ public:
     // Mixes up to n queued aux samples into pcm in place. With nothing queued
     // and the limiter at rest the mic frame is left bit-for-bit untouched.
     // When muted the aux samples are still consumed, so they do not pile up
-    // and play late after unmuting.
-    void mix(int16_t* pcm, size_t n, AuxRing& ring, bool muted) {
+    // and play late after unmuting. Returns how many aux samples were mixed.
+    size_t mix(int16_t* pcm, size_t n, AuxRing& ring, bool muted) {
         if (aux_.size() < n) aux_.resize(n);
         const size_t got = ring.pop(aux_.data(), n);
-        if (muted || (got == 0 && env_ >= 1.0f)) return;
+        if (muted) return 0;
+        if (got == 0 && env_ >= 1.0f) return 0;
 
         const float g = gain();
         if (mixed_.size() < n) mixed_.resize(n);
@@ -154,6 +155,7 @@ public:
             env_ = std::min(target, env_ + (1.0f - env_) * kRelease);
         }
         if (env_ > 0.9999f) env_ = 1.0f;
+        return got;
     }
 
 private:

@@ -71,6 +71,10 @@ JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_setMuted(JNIEnv*, jobject,
     engine()->set_muted(m == JNI_TRUE);
 }
 
+JNIEXPORT void JNICALL Java_com_phonemic_NativeBridge_setSoundsMuted(JNIEnv*, jobject, jboolean m) {
+    engine()->set_aux_muted(m == JNI_TRUE);
+}
+
 JNIEXPORT jboolean JNICALL Java_com_phonemic_NativeBridge_isRunning(JNIEnv*, jobject) {
     return engine()->running() ? JNI_TRUE : JNI_FALSE;
 }

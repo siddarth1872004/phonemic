@@ -10,7 +10,9 @@ struct Fonts {
     ImFont* body = nullptr;
     ImFont* small = nullptr;
     ImFont* title = nullptr;
-    ImFont* big = nullptr;  // the phone's name
+    ImFont* big = nullptr;   // the phone's name
+    ImFont* mono = nullptr;  // readouts
+    ImFont* tiny = nullptr;  // letter-spaced panel legends
 };
 
 // Per-window UI state that isn't a user setting.
@@ -26,7 +28,7 @@ struct UiState {
     int theme = -1, accent = -1;  // what setup_style() last applied
 };
 
-// Colours come from the theme (0 OLED black, 1 dark, 2 light) and accent.
+// Colours come from the theme (0 black, 1 graphite, 2 silver) and accent.
 void setup_style(float scale, int theme, int accent);
 Fonts load_fonts(float scale);
 void draw_ui(App& app, UiState& ui);

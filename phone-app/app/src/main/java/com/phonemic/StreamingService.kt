@@ -89,6 +89,11 @@ class StreamingService : Service() {
                 lastNotifText = ""
                 return START_NOT_STICKY
             }
+            ACTION_TOGGLE_SOUNDS -> {
+                soundsMuted = !soundsMuted
+                NativeBridge.setSoundsMuted(soundsMuted)
+                return START_NOT_STICKY
+            }
         }
         // Must be foreground within a few seconds of startForegroundService(),
         // even if it then stops straight away.
@@ -126,6 +131,8 @@ class StreamingService : Service() {
         running = true
         muted = false
         NativeBridge.setMuted(false)
+        soundsMuted = false
+        NativeBridge.setSoundsMuted(false)
         via = transport
         if (transport == Transport.WIFI) acquireWifiLock() else releaseWifiLock()
         startLink(opener)
@@ -335,6 +342,7 @@ class StreamingService : Service() {
         const val EXTRA_VOICE_FOCUS = "voice_focus"
         const val ACTION_STOP = "com.phonemic.STOP"
         const val ACTION_TOGGLE_MUTE = "com.phonemic.TOGGLE_MUTE"
+        const val ACTION_TOGGLE_SOUNDS = "com.phonemic.TOGGLE_SOUNDS"
         private const val CHANNEL_ID = "phonemic_streaming"
         private const val NOTIF_ID = 1
         private const val RETRY_MS = 2000L
@@ -345,7 +353,10 @@ class StreamingService : Service() {
         /** Survives activity recreation (rotation etc.) — the UI reads these. */
         @Volatile var running = false
             private set
+        /** The mic only; soundboard sounds have their own [soundsMuted]. */
         @Volatile var muted = false
+            private set
+        @Volatile var soundsMuted = false
             private set
         @Volatile var lastError = NativeBridge.OK
             private set

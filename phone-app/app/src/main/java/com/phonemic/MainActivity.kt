@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -25,14 +26,14 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 
 /**
  * PhoneMic — main screen. Chrome only: pick the link (Bluetooth / Wi-Fi / USB)
  * and the PC, Voice Focus, Start/Stop/Mute, theme, and live status from the PC.
+ * Styled as studio hardware: the [LevelRing] is the Start/Stop key, the
+ * other controls are lamp keys, and the accent colour means "live".
  * The audio hot path lives entirely in [StreamingService] -> native code.
  * Framework widgets only, so the APK carries no UI library.
  */
@@ -48,12 +49,14 @@ class MainActivity : Activity() {
     private lateinit var pcHint: TextView
     private lateinit var pcChevron: ImageView
     private lateinit var statusDot: View
+    private lateinit var signalLabel: TextView
     private lateinit var statusText: TextView
-    private lateinit var statsText: TextView
-    private lateinit var levelBar: ProgressBar
-    private lateinit var voiceFocus: Switch
-    private lateinit var toggle: Button
+    private lateinit var tally: TextView
+    private lateinit var readouts: List<TextView>
+    private lateinit var ring: LevelRing
+    private lateinit var voiceFocus: Button
     private lateinit var muteButton: Button
+    private lateinit var soundboardButton: Button
 
     private val handler = Handler(Looper.getMainLooper())
     private var startRequestedAt = 0L
@@ -84,19 +87,18 @@ class MainActivity : Activity() {
         pcHint = findViewById(R.id.pcHint)
         pcChevron = findViewById(R.id.pcChevron)
         statusDot = findViewById(R.id.statusDot)
+        signalLabel = findViewById(R.id.signalLabel)
         statusText = findViewById(R.id.statusText)
-        statsText = findViewById(R.id.statsText)
-        levelBar = findViewById(R.id.levelBar)
-        voiceFocus = findViewById(R.id.voiceFocusSwitch)
-        toggle = findViewById(R.id.toggleButton)
+        tally = findViewById(R.id.tally)
+        readouts = listOf(R.id.readCodec, R.id.readSent, R.id.readLoss, R.id.readBuffer).map { findViewById(it) }
+        ring = findViewById(R.id.levelRing)
+        ring.levelSource = { NativeBridge.inputLevel() }
+        voiceFocus = findViewById(R.id.voiceFocusKey)
         muteButton = findViewById(R.id.muteButton)
+        soundboardButton = findViewById(R.id.soundboardButton)
         findViewById<TextView>(R.id.versionText).text = getString(R.string.version_fmt, BuildConfig.VERSION_NAME)
-        // Keep the press ripple inside the pill shape.
-        toggle.clipToOutline = true
-        muteButton.clipToOutline = true
-        (linkButtons.values + themeButtons).forEach { it.clipToOutline = true }
-
-        voiceFocus.isChecked = prefs().getBoolean("voice_focus", true)
+        // Keep the press ripple inside the key cap.
+        (linkButtons.values + themeButtons + listOf(voiceFocus, muteButton, soundboardButton)).forEach { it.clipToOutline = true }
 
         linkButtons.forEach { (t, b) ->
             b.setOnClickListener {
@@ -114,14 +116,15 @@ class MainActivity : Activity() {
                 StreamingService.Transport.USB -> Unit
             }
         }
-        toggle.setOnClickListener { onToggle() }
+        ring.setOnClickListener { onToggle() }
+        voiceFocus.setOnClickListener {
+            prefs().edit().putBoolean("voice_focus", !voiceFocusOn()).apply()
+            render()
+        }
         muteButton.setOnClickListener {
             startService(Intent(this, StreamingService::class.java).setAction(StreamingService.ACTION_TOGGLE_MUTE))
         }
-        findViewById<Button>(R.id.soundboardButton).apply {
-            clipToOutline = true
-            setOnClickListener { startActivity(Intent(this@MainActivity, SoundboardActivity::class.java)) }
-        }
+        soundboardButton.setOnClickListener { startActivity(Intent(this@MainActivity, SoundboardActivity::class.java)) }
     }
 
     override fun onResume() {
@@ -141,6 +144,8 @@ class MainActivity : Activity() {
         }
         withPermissions(REQ_START) { startStreaming() }
     }
+
+    private fun voiceFocusOn() = prefs().getBoolean("voice_focus", true)
 
     private fun transport(): StreamingService.Transport =
         runCatching { StreamingService.Transport.valueOf(prefs().getString("transport", null)!!) }
@@ -180,7 +185,7 @@ class MainActivity : Activity() {
         val t = transport()
         val intent = Intent(this, StreamingService::class.java)
             .putExtra(StreamingService.EXTRA_TRANSPORT, t.name)
-            .putExtra(StreamingService.EXTRA_VOICE_FOCUS, voiceFocus.isChecked)
+            .putExtra(StreamingService.EXTRA_VOICE_FOCUS, voiceFocusOn())
         when (t) {
             StreamingService.Transport.BLUETOOTH -> {
                 val adapter = getSystemService(BluetoothManager::class.java)?.adapter
@@ -212,8 +217,6 @@ class MainActivity : Activity() {
             }
             StreamingService.Transport.USB -> Unit
         }
-        prefs().edit().putBoolean("voice_focus", voiceFocus.isChecked).apply()
-
         StreamingService.clearError()
         startRequestedAt = System.currentTimeMillis()
         startForegroundService(intent)
@@ -359,22 +362,54 @@ class MainActivity : Activity() {
         val running = StreamingService.running
         val pending = !running && StreamingService.lastError == NativeBridge.OK &&
             System.currentTimeMillis() - startRequestedAt < 1500
-        toggle.text = getString(if (running) R.string.stop else R.string.start)
-        toggle.backgroundTintList = ColorStateList.valueOf(color(if (running) R.attr.pmControl else R.attr.pmAccent))
-        toggle.setTextColor(color(if (running) R.attr.pmText else R.attr.pmOnAccent))
-        toggle.isEnabled = !pending
-        muteButton.visibility = if (running) View.VISIBLE else View.GONE
-        muteButton.text = getString(if (StreamingService.muted) R.string.unmute else R.string.mute)
-        muteButton.backgroundTintList = ColorStateList.valueOf(color(if (StreamingService.muted) R.attr.pmRed else R.attr.pmControl))
+        val st = StatusText.current()
+        val connected = running && st.text == R.string.status_connected
+        val micMuted = running && StreamingService.muted
+        ring.state = when {
+            !running && !pending -> LevelRing.State.IDLE
+            micMuted -> LevelRing.State.MUTED
+            connected -> LevelRing.State.LIVE
+            else -> LevelRing.State.CONNECTING
+        }
+        ring.title = getString(
+            when (ring.state) {
+                LevelRing.State.IDLE -> R.string.ring_start
+                LevelRing.State.CONNECTING -> R.string.ring_connecting
+                LevelRing.State.LIVE -> R.string.ring_live
+                LevelRing.State.MUTED -> R.string.ring_muted
+            },
+        )
+        ring.subtitle = getString(if (running) R.string.ring_stop_sub else R.string.ring_start_sub)
+        ring.contentDescription = getString(if (running) R.string.stop else R.string.start)
+        ring.isEnabled = !pending
+
+        // Tally light: filled only while the PC is actually hearing the mic.
+        val onAir = connected && !micMuted
+        tally.text = getString(if (onAir) R.string.tally_on_air else if (micMuted) R.string.tally_muted else R.string.tally_standby)
+        tally.background = GradientDrawable().apply {
+            cornerRadius = dp(5).toFloat()
+            when {
+                onAir -> setColor(color(R.attr.pmAccent))
+                micMuted -> setStroke(dp(1), color(R.attr.pmRed))
+                else -> setStroke(dp(1), color(R.attr.pmEdge))
+            }
+        }
+        tally.setTextColor(color(if (onAir) R.attr.pmOnAccent else if (micMuted) R.attr.pmRed else R.attr.pmMuted))
+
+        muteButton.isEnabled = running
+        muteButton.text = getString(if (micMuted) R.string.tally_muted else R.string.key_mic)
+        lightKey(muteButton, running, if (micMuted) R.attr.pmRed else R.attr.pmGreen)
         voiceFocus.isEnabled = !running
+        lightKey(voiceFocus, voiceFocusOn(), R.attr.pmAccent)
+        lightKey(soundboardButton, running && StreamingService.soundsMuted, R.attr.pmRed)
 
         // While streaming, show the link in use; otherwise the one picked.
         val t = if (running) StreamingService.via else transport()
         linkButtons.forEach { (k, b) ->
-            tintSegment(b, k == t)
+            lightKey(b, k == t, R.attr.pmAccent)
             b.isEnabled = !running
         }
-        themeButtons.forEachIndexed { i, b -> tintSegment(b, i == themeIndex()) }
+        themeButtons.forEachIndexed { i, b -> lightKey(b, i == themeIndex(), R.attr.pmAccent) }
         val name: String?
         when (t) {
             StreamingService.Transport.BLUETOOTH -> {
@@ -404,7 +439,6 @@ class MainActivity : Activity() {
         pinRow.isEnabled = !running
         pinValue.text = getString(if (prefs().getString("wifi_pin", "").isNullOrEmpty()) R.string.pin_none else R.string.pin_set)
 
-        val st = StatusText.current()
         statusText.text = if (st.text == R.string.status_connected)
             getString(R.string.status_connected_fmt, NativeBridge.pcBufferMs()) else getString(st.text)
         val tone = color(
@@ -415,28 +449,36 @@ class MainActivity : Activity() {
                 StatusText.Tone.NEUTRAL -> R.attr.pmMuted
             },
         )
-        statusDot.backgroundTintList = ColorStateList.valueOf(tone)
+        statusDot.backgroundTintList = ColorStateList.valueOf(if (connected) tone else color(R.attr.pmLedOff))
+        signalLabel.text = getString(if (connected) R.string.signal else R.string.no_signal)
+        signalLabel.setTextColor(color(if (connected) R.attr.pmGreen else R.attr.pmMuted))
         statusText.setTextColor(if (st.tone == StatusText.Tone.GOOD) color(R.attr.pmText) else tone)
 
         if (running) {
-            val level = (NativeBridge.inputLevel() * 100f).toInt().coerceIn(0, 100)
-            levelBar.setProgress(level, true)
-            val sent = NativeBridge.packetsSent()
             val lost = NativeBridge.pcLost()
             val recv = NativeBridge.pcReceived()
             val lossPct = if (recv + lost > 0) 100.0 * lost / (recv + lost) else 0.0
             val codec = if (NativeBridge.isOpus()) getString(R.string.codec_opus)
             else getString(R.string.codec_pcm, NativeBridge.sampleRate() / 1000.0)
-            statsText.text = getString(R.string.stats_fmt, codec, sent, lossPct)
+            readouts[0].text = getString(R.string.read_codec, codec)
+            readouts[1].text = getString(R.string.read_sent, NativeBridge.packetsSent())
+            readouts[2].text = getString(R.string.read_loss, lossPct)
+            readouts[3].text = getString(R.string.read_buffer, NativeBridge.pcBufferMs())
+            readouts[2].setTextColor(color(if (lossPct > 2.0) R.attr.pmAmber else R.attr.pmText))
         } else {
-            levelBar.setProgress(0, true)
-            statsText.text = ""
+            val idle = listOf(R.string.read_codec_idle, R.string.read_sent_idle, R.string.read_loss_idle, R.string.read_buffer_idle)
+            readouts.forEachIndexed { i, v ->
+                v.text = getString(idle[i])
+                v.setTextColor(color(R.attr.pmMuted))
+            }
         }
     }
 
-    private fun tintSegment(b: Button, selected: Boolean) {
-        b.backgroundTintList = ColorStateList.valueOf(color(if (selected) R.attr.pmAccent else R.attr.pmControl))
-        b.setTextColor(color(if (selected) R.attr.pmOnAccent else R.attr.pmText))
+    /** Light a key's lamp in [lampAttr], or leave it dark. */
+    private fun lightKey(b: Button, lit: Boolean, lampAttr: Int) {
+        b.compoundDrawableTintList = ColorStateList.valueOf(color(if (lit) lampAttr else R.attr.pmLedOff))
+        b.setTextColor(color(if (lit || b.isEnabled) R.attr.pmText else R.attr.pmMuted))
+        b.alpha = if (b.isEnabled) 1f else 0.55f
     }
 
     private fun themeIndex() = prefs().getInt("theme", 0).coerceIn(0, THEMES.size - 1)
@@ -457,11 +499,20 @@ class MainActivity : Activity() {
             val c = a.getColor(0, 0)
             a.recycle()
             val swatch = View(this).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(c)
-                    if (i == accentIndex()) setStroke(dp(3), color(R.attr.pmText))
-                }
+                // A lamp in a bezel; the chosen one gets a bright bezel.
+                background = LayerDrawable(
+                    arrayOf(
+                        GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(color(R.attr.pmControl))
+                            setStroke(dp(if (i == accentIndex()) 2 else 1), color(if (i == accentIndex()) R.attr.pmText else R.attr.pmEdge))
+                        },
+                        GradientDrawable().apply {
+                            shape = GradientDrawable.OVAL
+                            setColor(c)
+                        },
+                    ),
+                ).apply { setLayerInset(1, dp(9), dp(9), dp(9), dp(9)) }
                 contentDescription = resources.getResourceEntryName(ACCENTS[i]).substringAfter('.')
                 setOnClickListener { setAppearance("accent", i) }
             }
@@ -492,11 +543,11 @@ class MainActivity : Activity() {
         private val THEMES = intArrayOf(R.style.Theme_PhoneMic, R.style.Theme_PhoneMic_Dark, R.style.Theme_PhoneMic_Light)
         private const val THEME_LIGHT = 2
         private val ACCENTS = intArrayOf(
-            R.style.Accent_Periwinkle, R.style.Accent_Teal, R.style.Accent_Violet, R.style.Accent_Rose, R.style.Accent_Amber,
+            R.style.Accent_Signal, R.style.Accent_Teal, R.style.Accent_Violet, R.style.Accent_Rose, R.style.Accent_Ice,
         )
         private val ACCENTS_LIGHT = intArrayOf(
-            R.style.Accent_Periwinkle_Light, R.style.Accent_Teal_Light, R.style.Accent_Violet_Light,
-            R.style.Accent_Rose_Light, R.style.Accent_Amber_Light,
+            R.style.Accent_Signal_Light, R.style.Accent_Teal_Light, R.style.Accent_Violet_Light,
+            R.style.Accent_Rose_Light, R.style.Accent_Ice_Light,
         )
 
         /** Theme + accent overlay; must run before the layout is inflated. Shared with [SoundboardActivity]. */

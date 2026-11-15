@@ -53,7 +53,10 @@ object NativeBridge {
     /** A new connection: drop the stale backlog and the PC's last report. */
     external fun resetLink()
 
+    /** Mutes the microphone only; soundboard sounds still play. */
     external fun setMuted(muted: Boolean)
+    /** Mutes soundboard sounds only; the microphone still plays. */
+    external fun setSoundsMuted(muted: Boolean)
     external fun isRunning(): Boolean
 
     /** Packets produced since the last [start]. */

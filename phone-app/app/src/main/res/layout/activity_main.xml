@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Framework widgets only (no AppCompat / Material): a small, fast APK. -->
+<!-- Framework widgets only (no AppCompat / Material): a small, fast APK.
+     Laid out like a piece of studio hardware: a tally light, the level ring
+     (which is the Start/Stop key), readouts, keys, then routing and faceplate. -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -10,63 +12,206 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingHorizontal="20dp"
-        android:paddingVertical="24dp">
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="20dp">
 
-        <!-- Header -->
+        <!-- Header: badge, wordmark, tally light -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:layout_marginBottom="28dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
             <ImageView
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/bg_disc"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="@drawable/bg_badge"
                 android:contentDescription="@null"
-                android:padding="10dp"
+                android:padding="7dp"
                 android:src="@drawable/ic_mic"
                 android:tint="?attr/pmOnAccent" />
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
                 android:orientation="vertical">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="@string/app_name"
+                    android:fontFamily="sans-serif-black"
+                    android:letterSpacing="0.2"
+                    android:text="@string/wordmark"
                     android:textColor="?attr/pmText"
-                    android:textSize="24sp" />
+                    android:textSize="19sp" />
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/tagline"
-                    android:textColor="?attr/pmMuted"
-                    android:textSize="13sp" />
+                    android:id="@+id/versionText"
+                    style="@style/Label"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tally"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:background="@drawable/bg_tally"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:letterSpacing="0.2"
+                android:paddingHorizontal="12dp"
+                android:text="@string/tally_standby"
+                android:textColor="?attr/pmMuted"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Monitor: the ring, status, readouts -->
+        <LinearLayout style="@style/Card">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    style="@style/Label"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:text="@string/monitor_label" />
+
+                <View
+                    android:id="@+id/statusDot"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:layout_marginEnd="7dp"
+                    android:background="@drawable/dot"
+                    android:backgroundTint="?attr/pmLedOff" />
+
+                <TextView
+                    android:id="@+id/signalLabel"
+                    style="@style/Label"
+                    android:text="@string/no_signal" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginHorizontal="-20dp"
+                android:layout_marginTop="10dp"
+                android:background="?attr/pmEdge" />
+
+            <com.phonemic.LevelRing
+                android:id="@+id/levelRing"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:background="@null"
+                android:clickable="true"
+                android:contentDescription="@string/start"
+                android:focusable="true" />
+
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:minLines="2"
+                android:text="@string/status_idle"
+                android:textColor="?attr/pmMuted"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/readCodec"
+                    style="@style/Readout" />
+
+                <TextView
+                    android:id="@+id/readSent"
+                    style="@style/Readout"
+                    android:layout_marginStart="6dp" />
+
+                <TextView
+                    android:id="@+id/readLoss"
+                    style="@style/Readout"
+                    android:layout_marginStart="6dp" />
+
+                <TextView
+                    android:id="@+id/readBuffer"
+                    style="@style/Readout"
+                    android:layout_marginStart="6dp" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- PC + link status -->
-        <LinearLayout style="@style/Card">
+        <!-- Keys: mic mute, Voice Focus, soundboard -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/muteButton"
+                style="@style/Key"
+                android:layout_height="56dp"
+                android:text="@string/key_mic" />
+
+            <Button
+                android:id="@+id/voiceFocusKey"
+                style="@style/Key"
+                android:layout_height="56dp"
+                android:layout_marginHorizontal="8dp"
+                android:text="@string/key_voice" />
+
+            <Button
+                android:id="@+id/soundboardButton"
+                style="@style/Key"
+                android:layout_height="56dp"
+                android:text="@string/key_sfx" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/keysHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:text="@string/voice_focus_desc"
+            android:textColor="?attr/pmMuted"
+            android:textSize="11sp" />
+
+        <!-- Routing: link + PC + PIN -->
+        <LinearLayout
+            style="@style/Card"
+            android:layout_marginTop="12dp">
 
             <TextView
                 style="@style/Label"
-                android:text="@string/pc_label" />
+                android:text="@string/routing_label" />
 
-            <!-- Bluetooth / Wi-Fi / USB -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginHorizontal="-20dp"
+                android:layout_marginTop="10dp"
+                android:background="?attr/pmEdge" />
+
             <LinearLayout
                 android:id="@+id/linkRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="14dp"
                 android:orientation="horizontal">
 
                 <Button
@@ -90,11 +235,14 @@
                 android:id="@+id/pcRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="?android:attr/selectableItemBackground"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/bg_readout"
+                android:foreground="?android:attr/selectableItemBackground"
                 android:gravity="center_vertical"
-                android:minHeight="48dp"
-                android:orientation="horizontal">
+                android:minHeight="56dp"
+                android:orientation="horizontal"
+                android:paddingHorizontal="12dp"
+                android:paddingVertical="8dp">
 
                 <LinearLayout
                     android:layout_width="0dp"
@@ -103,15 +251,21 @@
                     android:orientation="vertical">
 
                     <TextView
+                        style="@style/Label"
+                        android:text="@string/pc_label" />
+
+                    <TextView
                         android:id="@+id/pcName"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
                         android:ellipsize="end"
-                        android:fontFamily="sans-serif-medium"
+                        android:fontFamily="monospace"
                         android:maxLines="1"
                         android:text="@string/choose_pc"
                         android:textColor="?attr/pmText"
-                        android:textSize="20sp" />
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/pcHint"
@@ -119,13 +273,13 @@
                         android:layout_height="wrap_content"
                         android:text="@string/pc_hint_choose"
                         android:textColor="?attr/pmMuted"
-                        android:textSize="12sp" />
+                        android:textSize="11sp" />
                 </LinearLayout>
 
                 <ImageView
                     android:id="@+id/pcChevron"
-                    android:layout_width="24dp"
-                    android:layout_height="24dp"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
                     android:contentDescription="@string/choose_pc"
                     android:src="@drawable/ic_chevron"
                     android:tint="?attr/pmMuted" />
@@ -136,122 +290,33 @@
                 android:id="@+id/pinRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:background="?android:attr/selectableItemBackground"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_readout"
+                android:foreground="?android:attr/selectableItemBackground"
                 android:gravity="center_vertical"
                 android:minHeight="44dp"
                 android:orientation="horizontal"
+                android:paddingHorizontal="12dp"
                 android:visibility="gone">
 
                 <TextView
+                    style="@style/Label"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/pin_label"
-                    android:textColor="?attr/pmText"
-                    android:textSize="15sp" />
+                    android:text="@string/pin_label" />
 
                 <TextView
                     android:id="@+id/pinValue"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
                     android:text="@string/pin_none"
-                    android:textColor="?attr/pmMuted"
-                    android:textSize="14sp" />
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginVertical="16dp"
-                android:background="?attr/pmEdge" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <View
-                    android:id="@+id/statusDot"
-                    android:layout_width="8dp"
-                    android:layout_height="8dp"
-                    android:layout_marginEnd="10dp"
-                    android:background="@drawable/dot"
-                    android:backgroundTint="?attr/pmMuted" />
-
-                <TextView
-                    android:id="@+id/statusText"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/status_idle"
-                    android:textColor="?attr/pmMuted"
-                    android:textSize="14sp" />
-            </LinearLayout>
-
-            <ProgressBar
-                android:id="@+id/levelBar"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="8dp"
-                android:layout_marginTop="14dp"
-                android:max="100"
-                android:progress="0"
-                android:progressDrawable="@drawable/meter" />
-
-            <TextView
-                android:id="@+id/statsText"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:fontFeatureSettings="tnum"
-                android:textColor="?attr/pmMuted"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <!-- Voice -->
-        <LinearLayout
-            style="@style/Card"
-            android:layout_marginTop="12dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="12dp"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="sans-serif-medium"
-                    android:text="@string/voice_focus"
                     android:textColor="?attr/pmText"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/voice_focus_desc"
-                    android:textColor="?attr/pmMuted"
                     android:textSize="13sp" />
             </LinearLayout>
-
-            <Switch
-                android:id="@+id/voiceFocusSwitch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:switchMinWidth="48dp"
-                android:thumb="@drawable/switch_thumb"
-                android:thumbTint="@color/switch_thumb_tint"
-                android:track="@drawable/switch_track"
-                android:trackTint="@color/switch_track_tint" />
         </LinearLayout>
 
-        <!-- Appearance: theme + accent, same choices as the desktop app -->
+        <!-- Faceplate: theme + accent, same choices as the desktop app -->
         <LinearLayout
             style="@style/Card"
             android:layout_marginTop="12dp">
@@ -260,10 +325,17 @@
                 style="@style/Label"
                 android:text="@string/appearance_label" />
 
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginHorizontal="-20dp"
+                android:layout_marginTop="10dp"
+                android:background="?attr/pmEdge" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="14dp"
                 android:orientation="horizontal">
 
                 <Button
@@ -283,7 +355,7 @@
                     android:text="@string/theme_light" />
             </LinearLayout>
 
-            <!-- Accent swatches, filled in by MainActivity -->
+            <!-- Accent lamps, filled in by MainActivity -->
             <LinearLayout
                 android:id="@+id/accentRow"
                 android:layout_width="match_parent"
@@ -292,55 +364,13 @@
                 android:orientation="horizontal" />
         </LinearLayout>
 
-        <!-- Start / Stop -->
-        <Button
-            android:id="@+id/toggleButton"
-            style="@style/Pill"
-            android:layout_height="58dp"
-            android:layout_marginTop="24dp"
-            android:backgroundTint="?attr/pmAccent"
-            android:text="@string/start"
-            android:textColor="?attr/pmOnAccent"
-            android:textSize="17sp" />
-
-        <Button
-            android:id="@+id/muteButton"
-            style="@style/Pill"
-            android:layout_height="50dp"
-            android:layout_marginTop="10dp"
-            android:backgroundTint="?attr/pmControl"
-            android:text="@string/mute"
-            android:textColor="?attr/pmText"
-            android:textSize="15sp"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/soundboardButton"
-            style="@style/Pill"
-            android:layout_height="50dp"
-            android:layout_marginTop="10dp"
-            android:backgroundTint="?attr/pmControl"
-            android:text="@string/soundboard"
-            android:textColor="?attr/pmText"
-            android:textSize="15sp" />
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="16dp"
             android:gravity="center"
             android:text="@string/background_hint"
-            android:textColor="?attr/pmMuted"
-            android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/versionText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginTop="6dp"
-            android:alpha="0.6"
             android:textColor="?attr/pmMuted"
             android:textSize="11sp" />
 

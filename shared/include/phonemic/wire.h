@@ -29,7 +29,8 @@
  *
  * AUDIO (kind 0, phone -> PC), 28-byte header:
  *     4     1   codec         PM_CODEC_*
- *     5     1   flags         bit0 = payload encrypted (XChaCha20-Poly1305)
+ *     5     1   flags         bit0 = payload encrypted (XChaCha20-Poly1305),
+ *                               bit1 = frame carries soundboard audio
  *     6     2   payload_len   bytes after the header (incl. 16-byte tag if encrypted)
  *     8     4   session_id    random per stream start, never 0
  *    12     4   seq           per-session packet counter, starts at 0
@@ -84,6 +85,8 @@ extern "C" {
 #define PM_CODEC_OPUS       1 /* one Opus packet per 10 ms frame, decoded at 48 kHz */
 
 #define PM_FLAG_ENCRYPTED   0x01
+/* Not just a voice: the receiver must not run speech denoising over it. */
+#define PM_FLAG_SOUND       0x02
 
 #define PM_AUDIO_HEADER_LEN   28
 #define PM_HELLO_LEN          12
@@ -252,7 +255,7 @@ static inline pm_result pm_decode_audio(const uint8_t* buf, size_t len, pm_audio
     if (h->session_id == 0) return PM_ERR_BAD_FIELD;
     if (h->sample_rate < PM_MIN_SAMPLE_RATE || h->sample_rate > PM_MAX_SAMPLE_RATE)
         return PM_ERR_BAD_FIELD;
-    if (h->flags & ~PM_FLAG_ENCRYPTED) return PM_ERR_BAD_FIELD;
+    if (h->flags & ~(PM_FLAG_ENCRYPTED | PM_FLAG_SOUND)) return PM_ERR_BAD_FIELD;
     if (h->codec != PM_CODEC_PCM16 && h->codec != PM_CODEC_OPUS) return PM_ERR_UNKNOWN_CODEC;
     if ((size_t)h->payload_len != len - PM_AUDIO_HEADER_LEN) return PM_ERR_LEN_MISMATCH;
     if (h->payload_len > PM_MAX_PAYLOAD) return PM_ERR_PAYLOAD_TOO_LARGE;

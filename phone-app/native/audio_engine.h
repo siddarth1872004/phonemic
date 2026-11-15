@@ -65,6 +65,8 @@ public:
     long aux_write(const int16_t* interleaved, size_t frames);
     void aux_stop();
     void set_aux_gain(float g) { mixer_.set_gain(g); }
+    // Mutes only the soundboard; set_muted() mutes only the mic.
+    void set_aux_muted(bool m) { aux_muted_.store(m, std::memory_order_relaxed); }
 
     // ---- telemetry for the UI (all lock-free) ----
     bool running() const { return running_.load(); }
@@ -90,7 +92,8 @@ private:
     bool open_stream();
     void close_stream();
     void sender_loop();
-    void send_frame(const int16_t* pcm, size_t n);
+    void send_frame(const int16_t* pcm, size_t n, bool sound);
+    void set_opus_mode(bool sound);
     void handle_status(const uint8_t* data, size_t len);
     void queue(const uint8_t* packet, size_t len);
 
@@ -106,6 +109,12 @@ private:
     AuxRing aux_ring_;
     AuxResampler aux_rs_;
     AuxMixer mixer_;     // sender thread only, apart from its atomic gain
+    std::atomic<bool> aux_muted_{false};
+    // Keep a clip's decaying tail (and the gap between quick presses) on the
+    // sound settings instead of flipping per frame.
+    static constexpr int kSoundHoldFrames = 30;  // 300 ms
+    int sound_hold_ = 0;       // sender thread: frames left to treat as soundboard audio
+    bool opus_music_ = false;  // sender thread: encoder currently tuned for sounds
 
     std::shared_ptr<oboe::AudioStream> stream_;
     std::thread sender_;

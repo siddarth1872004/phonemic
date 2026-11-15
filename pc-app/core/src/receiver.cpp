@@ -169,6 +169,8 @@ void Receiver::begin_session(const SourceId& src, const pm_audio_header& h, uint
     opus_.reset();
     session_fec_.store(0);
     denoiser_.reset();
+    sound_until_ms_ = 0;
+    denoise_bypassed_ = false;
     jit_have_ = false;
     jitter_us_ = 0;
     session_received_.store(0);
@@ -241,6 +243,7 @@ uint8_t Receiver::process_audio(const SourceId& src_in, const uint8_t* data, siz
     if (!is_active || h.codec != active_codec_) begin_session(src, h, now);
     active_last_ms_ = now;
     active_encrypted_ = encrypted;
+    if (h.flags & PM_FLAG_SOUND) sound_until_ms_ = now + kSoundBypassMs;
     if (h.codec == PM_CODEC_PCM16 && h.sample_rate != active_rate_) {
         active_rate_ = h.sample_rate;
         resampler_.set_rates(h.sample_rate, PM_SAMPLE_RATE);
@@ -316,7 +319,10 @@ void Receiver::play_frame(const float* in, size_t n) {
     float* buf = scratch_in_.data();
     size_t len = n;
 
-    if (voice_focus_.load(std::memory_order_relaxed) && Denoiser::available()) {
+    const bool sound = active_last_ms_ < sound_until_ms_;
+    if (denoise_bypassed_ && !sound) denoiser_.reset();  // don't resume on stale state
+    denoise_bypassed_ = sound;
+    if (voice_focus_.load(std::memory_order_relaxed) && Denoiser::available() && !sound) {
         scratch_dn_.clear();
         denoiser_.process(buf, len, scratch_dn_);
         vad_.store(denoiser_.vad(), std::memory_order_relaxed);

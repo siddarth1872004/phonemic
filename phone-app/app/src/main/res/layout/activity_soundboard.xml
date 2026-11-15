@@ -8,10 +8,19 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginHorizontal="12dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/bg_card"
         android:orientation="vertical"
         android:paddingHorizontal="20dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="10dp">
+        android:paddingTop="14dp"
+        android:paddingBottom="16dp">
+
+        <TextView
+            style="@style/Label"
+            android:layout_marginBottom="10dp"
+            android:text="@string/soundboard" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -21,8 +30,8 @@
 
             <View
                 android:id="@+id/sbDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
                 android:layout_marginEnd="10dp"
                 android:background="@drawable/dot" />
 
@@ -31,20 +40,18 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
+                android:fontFamily="monospace"
                 android:textColor="?attr/pmText"
-                android:textSize="14sp" />
+                android:textSize="13sp" />
 
             <Button
                 android:id="@+id/sbStop"
-                style="@style/Pill"
+                style="@style/Key"
                 android:layout_width="wrap_content"
-                android:layout_height="38dp"
+                android:layout_height="40dp"
                 android:layout_marginStart="10dp"
-                android:backgroundTint="?attr/pmControl"
-                android:paddingHorizontal="18dp"
+                android:layout_weight="0"
                 android:text="@string/sb_stop"
-                android:textColor="?attr/pmText"
-                android:textSize="14sp"
                 android:visibility="gone" />
         </LinearLayout>
 
@@ -56,11 +63,8 @@
             android:orientation="horizontal">
 
             <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/sb_level"
-                android:textColor="?attr/pmMuted"
-                android:textSize="13sp" />
+                style="@style/Label"
+                android:text="@string/sb_level" />
 
             <SeekBar
                 android:id="@+id/sbGain"
@@ -76,9 +80,30 @@
                 android:id="@+id/sbGainValue"
                 android:layout_width="44dp"
                 android:layout_height="wrap_content"
+                android:fontFamily="monospace"
                 android:gravity="end"
-                android:textColor="?attr/pmMuted"
-                android:textSize="13sp" />
+                android:textColor="?attr/pmText"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/sbMutes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/sbMuteMic"
+                style="@style/Key"
+                android:layout_marginEnd="5dp"
+                android:text="@string/mute" />
+
+            <Button
+                android:id="@+id/sbMuteSounds"
+                style="@style/Key"
+                android:layout_marginStart="5dp"
+                android:text="@string/sb_mute_sounds" />
         </LinearLayout>
     </LinearLayout>
 

@@ -22,7 +22,7 @@ Oboe input (AAudio, 48 kHz, I16, mono, low-latency)
   └─ onAudioReady [realtime]  → peak meter → SPSC ring (32k samples) → sem_post
 sender thread
   └─ 10 ms frames → + soundboard aux (aux_mixer.h: mic + aux·gain, peak
-     limiter at -1 dB; mic bit-exact when no aux) → [Opus encode, 48 kbps, FEC] → wire.h AUDIO packet
+     limiter at -1 dB; mic bit-exact when no aux) → [Opus encode, 48 kbps voice / 96 kbps full-band while a sound plays, FEC] → wire.h AUDIO packet
      (media-clock timestamp, session id) → [u16 len] frame
      → bounded queue (20 frames, oldest dropped)
   └─ reopens the stream after onErrorAfterClose (headset, Bluetooth…)

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.1 — 2026-11
+
+Full notes: [docs/releases/v0.5.1.md](docs/releases/v0.5.1.md).
+
+### Fixed
+- Soundboard sounds were muffled: Opus ran in speech mode and the PC's Voice
+  focus (RNNoise) treated clips as noise. While a sound plays the phone now
+  encodes full-band at 96 kbps and flags those frames (`PM_FLAG_SOUND`), and
+  the PC skips denoising for them. The PC app must be updated with the phone
+  app: an older PC drops flagged frames.
+
+### Changed
+- Phone app: **Mute mic** and **Mute sounds** are separate. Mute (main screen,
+  notification) now mutes only the mic; the Soundboard screen has both.
+- New look for both apps, styled like studio hardware: graphite faceplates,
+  LED lamps and keys, monospace readouts, and a round level meter. On the
+  phone the meter ring is the Start/Stop key; on the PC its centre mutes. A
+  tally light reads ON AIR / MUTED / STANDBY. Themes are now Black, Graphite
+  and Silver; accents Signal (new default), Teal, Violet, Rose and Ice. Saved
+  theme and accent choices carry over by position.
+
 ## 0.5.0 — 2026-11
 
 Full notes: [docs/releases/v0.5.0.md](docs/releases/v0.5.0.md).

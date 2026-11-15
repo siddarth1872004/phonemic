@@ -6,6 +6,7 @@
     <attr name="pmEdge" format="color" />
     <attr name="pmControl" format="color" />
     <attr name="pmControlHover" format="color" />
+    <attr name="pmLedOff" format="color" />
     <attr name="pmAccent" format="color" />
     <attr name="pmOnAccent" format="color" />
     <attr name="pmGreen" format="color" />
