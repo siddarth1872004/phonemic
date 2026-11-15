@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.2 — 2026-11
+
+Full notes: [docs/releases/v0.5.2.md](docs/releases/v0.5.2.md).
+
+### Changed
+- New app icon to match the studio-hardware look: a light mic inside an
+  orange LED level ring on a graphite tile (Windows .ico, Linux window and tray
+  icon, Android launcher icon with a themed-icon monochrome layer). Small sizes
+  drop the ring and enlarge the mic.
+
 ## 0.5.1 — 2026-11
 
 Full notes: [docs/releases/v0.5.1.md](docs/releases/v0.5.1.md).
