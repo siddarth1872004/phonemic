@@ -32,7 +32,7 @@ PhoneMic installs no driver of its own.
 - **Android:** install `PhoneMic.apk` from Releases (allow "install unknown apps" when asked).
 
 ### 4. Choose how the phone connects
-At the top of the phone app pick **Bluetooth**, **Wi-Fi** or **USB**. You can switch any time.
+In the phone app's **Routing** panel pick **Bluetooth**, **Wi-Fi** or **USB**. You can switch any time.
 
 - **Bluetooth:** pair the phone with the PC once, like a pair of headphones: on the
   phone, **Settings → Bluetooth → Pair new device** and pick the PC (the PhoneMic
@@ -53,7 +53,7 @@ At the top of the phone app pick **Bluetooth**, **Wi-Fi** or **USB**. You can sw
 ## Every time you use it
 
 1. Open **PhoneMic** on the PC.
-2. On the phone, open **PhoneMic** and tap **Start**.
+2. On the phone, open **PhoneMic** and tap **Start** (the big ring in the middle).
 3. In **Discord / Zoom / OBS**, choose the microphone **PhoneMic Microphone**
    (on Windows: *CABLE Output (VB-Audio Virtual Cable)*, or
    *PhoneMic Microphone (VB-Audio Virtual Cable)* once renamed).
@@ -82,4 +82,4 @@ The phone and the PC both tell you what's wrong. The most common cases:
 | No PhoneMic / CABLE microphone in Discord | Windows: VB-CABLE isn't installed yet or Windows needs a restart, so redo step 2. Linux: make sure PipeWire or PulseAudio is running. |
 | Everything you hear on the PC goes into the mic | Windows made the cable your speaker. PhoneMic moves it back by itself; if not, pick your real speakers in Windows' sound settings. |
 | Audio is choppy | On Bluetooth keep the phone within a few metres of the PC; or try USB or Wi-Fi; or pick a bigger **buffer** in the PC window (e.g. "Stable (80 ms)"). |
-| Want a different look | Both apps have **Appearance**: OLED black, Dark or Light, and an accent colour. |
+| Want a different look | Both apps have a **Faceplate** panel: Black, Graphite or Silver, and an accent colour. |

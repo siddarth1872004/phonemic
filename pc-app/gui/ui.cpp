@@ -370,17 +370,17 @@ void header(App& app, UiState& ui) {
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const float r = S(ui, 15);
     const ImVec2 c(p.x + r, p.y + r);
-    // The app icon (packaging/linux/phonemic.svg) as a lit badge, drawn from
-    // the svg's 256-unit coordinates.
-    const float k = 2 * r / 240;
+    // The app icon's mic (packaging/linux/phonemic.svg) as a lit badge, drawn
+    // from the svg's 256-unit coordinates at its small-size scale (1.45x, ring dropped).
+    const float k = 1.45f * 2 * r / 240;
     auto at = [&](float x, float y) { return ImVec2(c.x + (x - 128) * k, c.y + (y - 128) * k); };
     dl->AddRectFilled(ImVec2(c.x - r, c.y - r), ImVec2(c.x + r, c.y + r), u32(kAccent), S(ui, 6));
     const ImU32 w = u32(kOnAccent);
-    dl->AddRectFilled(at(100, 40), at(156, 148), w, 28 * k);
-    dl->PathArcTo(at(128, 116), 56 * k, 0.0f, 3.14159f, 20);
-    dl->PathStroke(w, 0, 14 * k);
-    dl->AddLine(at(128, 172), at(128, 200), w, 14 * k);
-    dl->AddLine(at(100, 208), at(156, 208), w, 14 * k);
+    dl->AddRectFilled(at(108, 60), at(148, 132), w, 20 * k);
+    dl->PathArcTo(at(128, 112), 44 * k, 0.0f, 3.14159f, 20);
+    dl->PathStroke(w, 0, 20 * k);
+    dl->AddLine(at(128, 156), at(128, 182), w, 20 * k);
+    dl->AddLine(at(106, 190), at(150, 190), w, 20 * k);
 
     const float tx = p.x + r * 2 + S(ui, 12);
     spaced_text(dl, ImVec2(tx, p.y + S(ui, 1)), ui.fonts.title, u32(kText), "PHONEMIC", S(ui, 3));

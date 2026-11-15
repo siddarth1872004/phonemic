@@ -1,16 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
   <!-- PhoneMic icon master. Exports: pc-app/gui/phonemic.ico (packaging/make-icons.sh),
-       phone-app .../drawable/ic_launcher_{bg,fg}.xml, pc-app/gui/main.cpp make_icon(). -->
+       phone-app .../drawable/ic_launcher_{bg,fg,mono}.xml, pc-app/gui/main.cpp make_icon().
+       The ring is 18 ticks over 270 degrees (r 84..100), the first 12 lit; make-icons.sh
+       drops both ring paths at small sizes. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#8F9DFF"/>
-      <stop offset="1" stop-color="#5566E8"/>
+      <stop offset="0" stop-color="#2A2A2E"/>
+      <stop offset="1" stop-color="#121214"/>
     </linearGradient>
   </defs>
   <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
-  <g fill="none" stroke="#0B0B0E" stroke-linecap="round">
-    <rect x="100" y="40" width="56" height="108" rx="28" fill="#0B0B0E" stroke="none"/>
-    <path d="M72 116a56 56 0 0 0 112 0M128 172v28M100 208h56" stroke-width="14"/>
-    <path d="M207.7 48a92 92 0 0 1 0 92M48.3 48a92 92 0 0 0 0 92" stroke-width="12" opacity="0.55"/>
+  <rect x="9" y="9" width="238" height="238" rx="55" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>
+  <g fill="none" stroke-linecap="round">
+    <path id="ring-lit" stroke="#FF6B1A" stroke-width="10" d="M61.4 179.1L48.7 188.9M50.4 160.1L35.6 166.3M44.7 139L28.9 141.1M44.7 117L28.9 114.9M50.4 95.9L35.6 89.7M61.4 76.9L48.7 67.1M76.9 61.4L67.1 48.7M95.9 50.4L89.7 35.6M117 44.7L114.9 28.9M139 44.7L141.1 28.9M160.1 50.4L166.3 35.6M179.1 61.4L188.9 48.7"/>
+    <path id="ring-off" stroke="#3A3A40" stroke-width="10" d="M194.6 76.9L207.3 67.1M205.6 95.9L220.4 89.7M211.3 117L227.1 114.9M211.3 139L227.1 141.1M205.6 160.1L220.4 166.3M194.6 179.1L207.3 188.9"/>
+    <rect x="108" y="60" width="40" height="72" rx="20" fill="#EDEDEF"/>
+    <path stroke="#EDEDEF" stroke-width="12" d="M84 112a44 44 0 0 0 88 0M128 156v26M106 190h44"/>
   </g>
 </svg>

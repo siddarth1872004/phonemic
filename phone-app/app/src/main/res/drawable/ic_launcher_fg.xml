@@ -1,28 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Launcher foreground (and themed-icon monochrome): the mic and sound arcs of
-     packaging/linux/phonemic.svg, scaled from its 256 units into the safe zone. -->
+<!-- Launcher foreground: the level ring and mic of packaging/linux/phonemic.svg,
+     scaled from its 256 units into the 66dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.28"
-        android:scaleY="0.28"
-        android:translateX="18.16"
-        android:translateY="19.28">
+        android:scaleX="0.3"
+        android:scaleY="0.3"
+        android:translateX="15.6"
+        android:translateY="15.6">
         <path
-            android:fillColor="#FF0B0B0E"
-            android:pathData="M100,68a28,28 0,0 1,56 0v52a28,28 0,0 1,-56 0z" />
-        <path
-            android:pathData="M72,116a56,56 0,0 0,112 0M128,172v28M100,208h56"
-            android:strokeColor="#FF0B0B0E"
+            android:pathData="M61.4,179.1L48.7,188.9M50.4,160.1L35.6,166.3M44.7,139L28.9,141.1M44.7,117L28.9,114.9M50.4,95.9L35.6,89.7M61.4,76.9L48.7,67.1M76.9,61.4L67.1,48.7M95.9,50.4L89.7,35.6M117,44.7L114.9,28.9M139,44.7L141.1,28.9M160.1,50.4L166.3,35.6M179.1,61.4L188.9,48.7"
+            android:strokeColor="#FFFF6B1A"
             android:strokeLineCap="round"
-            android:strokeWidth="14" />
+            android:strokeWidth="10" />
         <path
-            android:pathData="M207.7,48a92,92 0,0 1,0 92M48.3,48a92,92 0,0 0,0 92"
-            android:strokeAlpha="0.55"
-            android:strokeColor="#FF0B0B0E"
+            android:pathData="M194.6,76.9L207.3,67.1M205.6,95.9L220.4,89.7M211.3,117L227.1,114.9M211.3,139L227.1,141.1M205.6,160.1L220.4,166.3M194.6,179.1L207.3,188.9"
+            android:strokeColor="#FF3A3A40"
+            android:strokeLineCap="round"
+            android:strokeWidth="10" />
+        <path
+            android:fillColor="#FFEDEDEF"
+            android:pathData="M108,80a20,20 0,0 1,40 0v32a20,20 0,0 1,-40 0z" />
+        <path
+            android:pathData="M84,112a44,44 0,0 0,88 0M128,156v26M106,190h44"
+            android:strokeColor="#FFEDEDEF"
             android:strokeLineCap="round"
             android:strokeWidth="12" />
     </group>

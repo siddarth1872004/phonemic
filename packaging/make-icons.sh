@@ -1,13 +1,14 @@
 #!/bin/sh
 # Regenerate pc-app/gui/phonemic.ico from the icon master, packaging/linux/phonemic.svg.
-# Needs rsvg-convert and python3. Sizes up to 24 px drop the sound arcs and
-# thicken the strokes, which would otherwise blur into the background.
+# Needs rsvg-convert and python3. Sizes up to 24 px drop the level ring and
+# enlarge and thicken the mic, which would otherwise blur into the background.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 svg=$root/packaging/linux/phonemic.svg
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-sed -e '/opacity="0.55"/d' -e 's/stroke-width="14"/stroke-width="22"/' "$svg" > "$tmp/small.svg"
+sed -e '/id="ring-/d' -e 's/stroke-width="12"/stroke-width="20"/' \
+    -e 's/<g fill="none" stroke-linecap="round">/<g fill="none" stroke-linecap="round" transform="translate(128 128) scale(1.45) translate(-128 -128)">/' "$svg" > "$tmp/small.svg"
 for n in 16 20 24 32 40 48 64 128 256; do
     src=$svg
     [ "$n" -le 24 ] && src=$tmp/small.svg

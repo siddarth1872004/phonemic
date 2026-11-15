@@ -8,8 +8,8 @@ It is free and open source, needs no extra hardware or account, and is native
 code throughout: a C++ desktop app for Windows and Linux, and an Android
 app with a C++ audio engine. The phone reaches the PC over **Bluetooth**,
 **Wi-Fi** or a **USB cable**, whichever is handy. Both apps are small and fast,
-with a true-black (OLED) look by default, plus Dark and Light themes and a
-choice of accent colours.
+and both are laid out like a piece of studio gear: an ON AIR tally light, a
+segmented level ring, lit keys and screwed-down faceplate panels.
 
 ## Features
 
@@ -35,11 +35,15 @@ choice of accent colours.
 - Clock-drift compensation, so the delay does not creep up and there are no
   periodic clicks during long calls.
 - Voice Focus noise removal (the phone's own suppressor plus RNNoise on the PC),
-  a voice changer, gain with a limiter that cannot clip, and mute from either
-  device.
+  a voice changer, and gain with a limiter that cannot clip.
+- Separate mutes for your voice and the soundboard, so you can play sounds
+  with your mic muted or silence the sounds while you keep talking. The PC can
+  mute too.
 - "Listen on this PC" lets you monitor yourself on any output device.
 - Soundboard on the phone: tap a sound on MyInstants and it plays into the
-  microphone, mixed with your voice, not out of the phone's speaker.
+  microphone, mixed with your voice, not out of the phone's speaker. While a
+  sound plays, PhoneMic switches Opus to its music mode at a higher bitrate and
+  lets it past the PC's noise removal, so it arrives clear instead of muffled.
 
 **The microphone**
 - **Windows:** PhoneMic uses VB-CABLE, a free and signed virtual audio cable
@@ -63,8 +67,13 @@ choice of accent colours.
 - Only one phone can feed the microphone at a time.
 
 **Look**
-- Black (default), Graphite and Silver themes and five accent colours, chosen
-  the same way on the phone and the PC.
+- Studio-hardware design on both devices. On the phone, a 270-degree LED level
+  ring with peak hold is also the Start/Stop key; underneath are CODEC, SENT,
+  LOSS and BUFFER readouts and lit **MIC**, **VOICE** and **SFX** keys. The PC has
+  the same ring, with modules for the channel, inputs and output.
+- Black (default), Graphite and Silver faceplates and five accent colours
+  (Signal orange, Teal, Violet, Rose, Ice), chosen the same way on the phone
+  and the PC.
 
 ## Download
 
@@ -97,8 +106,9 @@ Get the latest version from the
 
 ### 3. Connect the phone
 
-Install `PhoneMic.apk`, choose a link at the top of the phone app, then tap
-**Start**. It keeps streaming with the screen off.
+Install `PhoneMic.apk`, choose a link in the phone app's **Routing** panel,
+then tap the ring (**Start**). The tally lights **ON AIR** while audio is going
+out, and streaming continues with the screen off.
 
 | Link | Setup |
 |---|---|

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon monochrome: the foreground without the unlit ticks, which would
+     otherwise draw at full strength once the launcher recolours by alpha. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.3"
+        android:scaleY="0.3"
+        android:translateX="15.6"
+        android:translateY="15.6">
+        <path
+            android:pathData="M61.4,179.1L48.7,188.9M50.4,160.1L35.6,166.3M44.7,139L28.9,141.1M44.7,117L28.9,114.9M50.4,95.9L35.6,89.7M61.4,76.9L48.7,67.1M76.9,61.4L67.1,48.7M95.9,50.4L89.7,35.6M117,44.7L114.9,28.9M139,44.7L141.1,28.9M160.1,50.4L166.3,35.6M179.1,61.4L188.9,48.7"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeWidth="10" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M108,80a20,20 0,0 1,40 0v32a20,20 0,0 1,-40 0z" />
+        <path
+            android:pathData="M84,112a44,44 0,0 0,88 0M128,156v26M106,190h44"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeWidth="12" />
+    </group>
+</vector>

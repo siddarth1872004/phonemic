@@ -37,35 +37,48 @@ float sd_segment(float px, float py, float ax, float ay, float bx, float by) {
     return std::hypot(px - ax - t * dx, py - ay - t * dy);
 }
 
-// Distance to the arc of radius r around (cx, cy) whose ends are (cx +- ex, cy + ey).
-float sd_arc(float px, float py, float cx, float cy, float r, float ex, float ey, bool below) {
-    const bool inside = below ? py >= cy : std::fabs(py - cy) <= ey * std::hypot(px - cx, py - cy) / r && px > cx;
-    if (inside) return std::fabs(std::hypot(px - cx, py - cy) - r);
-    return std::min(sd_segment(px, py, cx + ex, cy + ey, cx + ex, cy + ey),
-                    below ? sd_segment(px, py, cx - ex, cy + ey, cx - ex, cy + ey)
-                          : sd_segment(px, py, cx + ex, cy - ey, cx + ex, cy - ey));
+// Distance to the lower half of the circle of radius r around (cx, cy).
+float sd_lower_arc(float px, float py, float cx, float cy, float r) {
+    if (py >= cy) return std::fabs(std::hypot(px - cx, py - cy) - r);
+    return std::min(std::hypot(px - cx - r, py - cy), std::hypot(px - cx + r, py - cy));
 }
 
+// Like make-icons.sh, sizes up to 24 px drop the ring and draw the mic 1.45x
+// larger with thicker strokes, so it doesn't blur into the background.
 std::vector<unsigned char> make_icon(int n) {
     std::vector<unsigned char> px(static_cast<size_t>(n) * n * 4, 0);
     const float unit = 256.0f / n;  // svg units per pixel
+    const bool small = n <= 24;
+    const float zoom = small ? 1.45f : 1.0f, half_stroke = small ? 10.0f : 6.0f;
     auto cover = [&](float d) { return std::clamp(0.5f - d / unit, 0.0f, 1.0f); };
+    auto blend = [](float* rgb, unsigned hex, float a) {
+        const float c[3] = {float(hex >> 16), float((hex >> 8) & 0xFF), float(hex & 0xFF)};
+        for (int i = 0; i < 3; ++i) rgb[i] += (c[i] - rgb[i]) * a;
+    };
     for (int y = 0; y < n; ++y) {
         for (int x = 0; x < n; ++x) {
             const float u = (x + 0.5f) * unit, v = (y + 0.5f) * unit;
             const float bg = cover(sd_round_box(u, v, 8, 8, 248, 248, 56));
             if (bg <= 0) continue;
-            float mic = cover(sd_round_box(u, v, 100, 40, 156, 148, 28));
-            mic = std::max(mic, cover(sd_arc(u, v, 128, 116, 56, 56, 0, true) - 7));
-            mic = std::max(mic, cover(sd_segment(u, v, 128, 172, 128, 200) - 7));
-            mic = std::max(mic, cover(sd_segment(u, v, 100, 208, 156, 208) - 7));
-            // Sound arcs (mirrored), at 55% like the svg.
-            const float wave = 0.55f * cover(sd_arc(128 + std::fabs(u - 128), v, 128, 94, 92, 79.7f, 46, false) - 6);
-            const float g = v / 256;  // #8F9DFF -> #5566E8, top to bottom
-            const float rgb[3] = {0x8F + (0x55 - 0x8F) * g, 0x9D + (0x66 - 0x9D) * g, 0xFF + (0xE8 - 0xFF) * g};
-            const float ink = std::max(mic, wave);
+            const float g = std::clamp((v - 8) / 240, 0.0f, 1.0f);  // #2A2A2E -> #121214
+            float rgb[3] = {0x2A + (0x12 - 0x2A) * g, 0x2A + (0x12 - 0x2A) * g, 0x2E + (0x14 - 0x2E) * g};
+            if (!small) {
+                // 18 ticks over 270 degrees, open at the bottom; the first 12 lit.
+                for (int i = 0; i < 18; ++i) {
+                    const float t = (135 + 270 * (i + 0.5f) / 18) * 3.14159265f / 180;
+                    const float c = std::cos(t), s = std::sin(t);
+                    const float d = sd_segment(u, v, 128 + 84 * c, 128 + 84 * s, 128 + 100 * c, 128 + 100 * s) - 5;
+                    blend(rgb, i < 12 ? 0xFF6B1A : 0x3A3A40, cover(d));
+                }
+            }
+            const float mu = (u - 128) / zoom + 128, mv = (v - 128) / zoom + 128;
+            float d = sd_round_box(mu, mv, 108, 60, 148, 132, 20);
+            d = std::min(d, sd_lower_arc(mu, mv, 128, 112, 44) - half_stroke);
+            d = std::min(d, sd_segment(mu, mv, 128, 156, 128, 182) - half_stroke);
+            d = std::min(d, sd_segment(mu, mv, 106, 190, 150, 190) - half_stroke);
+            blend(rgb, 0xEDEDEF, cover(d * zoom));
             unsigned char* p = &px[(static_cast<size_t>(y) * n + x) * 4];
-            for (int c = 0; c < 3; ++c) p[c] = static_cast<unsigned char>(rgb[c] + (0x0B - rgb[c]) * ink + 0.5f);
+            for (int c = 0; c < 3; ++c) p[c] = static_cast<unsigned char>(rgb[c] + 0.5f);
             p[3] = static_cast<unsigned char>(255 * bg + 0.5f);
         }
     }
